@@ -34,7 +34,7 @@ export async function checkBudgetAlerts() {
     }
 
     // 3. Find vehicles over budget
-    const overBudget = spending.filter(v => Number(v.total_spent) > budgetLimit)
+    const overBudget = spending.filter(v => Number(v.total_gross) > budgetLimit)
 
     if (overBudget.length === 0) {
         return { message: "Żaden pojazd nie przekroczył limitu budżetu." }
@@ -61,7 +61,7 @@ export async function checkBudgetAlerts() {
             period_start: periodStart,
             period_end: periodEnd,
             threshold_value: budgetLimit,
-            actual_value: Number(v.total_spent),
+            actual_value: Number(v.total_gross),
             currency_code: 'PLN',
             acknowledged: false,
             created_at: new Date().toISOString()
