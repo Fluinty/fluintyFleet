@@ -1,4 +1,5 @@
 import { createClient } from '@/utils/supabase/server'
+import { fetchAll } from '@/utils/supabase/fetch-all'
 import { redirect } from 'next/navigation'
 import { OrdersFilters } from '@/components/orders/OrdersFilters'
 import { OrdersTable } from '@/components/orders/OrdersTable'
@@ -37,47 +38,50 @@ export default async function OrdersPage({
     const sort = typeof params.sort === 'string' ? params.sort : 'order_date'
     const dir = typeof params.dir === 'string' ? params.dir : 'desc'
 
-    let query = supabase
-        .from('orders')
-        .select('*, branches(name), order_items(*, vehicles(id, plate_number))')
-
-    if (search) {
-        query = query.or(`intercars_id.ilike.%${search}%,description.ilike.%${search}%`)
-    }
-
+    // Orders may have branch_code instead of branch_id, so the branch filter matches on either
+    let branchCode: string | null = null
     if (branch) {
-        // First try to get branch code from selected branch ID to match orders by branch_code
         const { data: selectedBranch } = await supabase
             .from('branches')
             .select('code')
             .eq('id', branch)
             .single()
-
-        if (selectedBranch?.code) {
-            // Filter by branch_code (orders may have this instead of branch_id)
-            query = query.or(`branch_id.eq.${branch},branch_code.eq.${selectedBranch.code}`)
-        } else {
-            // Fallback to just branch_id
-            query = query.eq('branch_id', branch)
-        }
-    }
-
-    if (status !== 'ALL') {
-        query = query.eq('status', status)
-    }
-
-    if (dateFrom) {
-        query = query.gte('order_date', dateFrom)
-    }
-
-    if (dateTo) {
-        query = query.lte('order_date', dateTo)
+        branchCode = selectedBranch?.code ?? null
     }
 
     const sortDir = dir === 'desc' ? false : true
-    query = query.order(sort, { ascending: sortDir })
 
-    const { data: orders } = await query
+    // Stronicowane (fetchAll): bez filtrów to cała historia zamówień, dużo ponad 1000 wierszy.
+    // Drugie .order('id') daje stałą kolejność przy remisach w sortowanej kolumnie.
+    const orders = await fetchAll(() => {
+        let query = supabase
+            .from('orders')
+            .select('*, branches(name), order_items(*, vehicles(id, plate_number))')
+
+        if (search) {
+            query = query.or(`intercars_id.ilike.%${search}%,description.ilike.%${search}%`)
+        }
+
+        if (branch) {
+            query = branchCode
+                ? query.or(`branch_id.eq.${branch},branch_code.eq.${branchCode}`)
+                : query.eq('branch_id', branch)
+        }
+
+        if (status !== 'ALL') {
+            query = query.eq('status', status)
+        }
+
+        if (dateFrom) {
+            query = query.gte('order_date', dateFrom)
+        }
+
+        if (dateTo) {
+            query = query.lte('order_date', dateTo)
+        }
+
+        return query.order(sort, { ascending: sortDir }).order('id')
+    })
 
     const { data: branches } = await supabase.from('branches').select('id, name').order('name')
 

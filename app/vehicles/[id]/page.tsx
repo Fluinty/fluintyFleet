@@ -1,4 +1,5 @@
 import { createClient } from '@/utils/supabase/server'
+import { fetchAll } from '@/utils/supabase/fetch-all'
 import { notFound } from 'next/navigation'
 import { VehicleInfo } from '@/components/vehicles/VehicleInfo'
 import { ExpensesChart } from '@/components/dashboard/ExpensesChart'
@@ -47,7 +48,8 @@ export default async function VehicleDetailsPage({ params }: PageProps) {
         .eq('vehicle_id', id)
 
     // 2. Fetch Order Items assigned to this vehicle (with order info for date/intercars_id)
-    const { data: items } = await supabase
+    // Stronicowane (fetchAll): pełna historia auta, bez ucinania do 1000 pozycji
+    const items = await fetchAll(() => supabase
         .from('order_items')
         .select(`
             id,
@@ -67,6 +69,7 @@ export default async function VehicleDetailsPage({ params }: PageProps) {
         `)
         .eq('vehicle_id', id)
         .order('created_at', { ascending: false })
+        .order('id'))
 
     // 3. Calculate Expenses Chart Data (Last 12 months) from items
     const expensesMap = new Map<string, number>()

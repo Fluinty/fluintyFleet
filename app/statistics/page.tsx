@@ -1,4 +1,5 @@
 import { createClient } from '@/utils/supabase/server'
+import { fetchAll } from '@/utils/supabase/fetch-all'
 import { redirect } from 'next/navigation'
 import { StatisticsFilters } from '@/components/statistics/StatisticsFilters'
 import { StatsSummaryCards } from '@/components/statistics/StatsSummaryCards'
@@ -53,44 +54,31 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
         .eq('is_active', true)
         .order('name')
 
-    // Build base query for order items with orders join
+    // Pozycje z autem w zadanym przedziale dat. Stronicowane (fetchAll), bo miesiąc może mieć
+    // więcej niż 1000 pozycji, a jedno zapytanie zwraca najwyżej tyle.
+    const fetchAssignedItems = (from: string, to: string) => fetchAll(() => {
+        let q = supabase
+            .from('order_items')
+            .select(`
+                id,
+                total_gross,
+                vehicle_id,
+                orders!inner(id, order_date, branch_code)
+            `)
+            .not('vehicle_id', 'is', null)
+            .gte('orders.order_date', from)
+            .lte('orders.order_date', to)
+        if (selectedBranch) {
+            q = q.eq('orders.branch_code', selectedBranch)
+        }
+        return q.order('id')
+    })
+
     // Current month totals
-    let currentQuery = supabase
-        .from('order_items')
-        .select(`
-            id,
-            total_gross,
-            vehicle_id,
-            orders!inner(id, order_date, branch_code)
-        `)
-        .not('vehicle_id', 'is', null)
-        .gte('orders.order_date', monthStart)
-        .lte('orders.order_date', monthEnd)
-
-    if (selectedBranch) {
-        currentQuery = currentQuery.eq('orders.branch_code', selectedBranch)
-    }
-
-    const { data: currentItems } = await currentQuery
+    const currentItems = await fetchAssignedItems(monthStart, monthEnd)
 
     // Previous month totals (for MoM comparison)
-    let prevQuery = supabase
-        .from('order_items')
-        .select(`
-            id,
-            total_gross,
-            vehicle_id,
-            orders!inner(id, order_date, branch_code)
-        `)
-        .not('vehicle_id', 'is', null)
-        .gte('orders.order_date', prevMonthStart)
-        .lte('orders.order_date', prevMonthEnd)
-
-    if (selectedBranch) {
-        prevQuery = prevQuery.eq('orders.branch_code', selectedBranch)
-    }
-
-    const { data: prevItems } = await prevQuery
+    const prevItems = await fetchAssignedItems(prevMonthStart, prevMonthEnd)
 
     // Calculate summary metrics
     const totalSpending = currentItems?.reduce((sum, item) => sum + (item.total_gross || 0), 0) || 0

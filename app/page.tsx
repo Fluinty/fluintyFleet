@@ -1,4 +1,5 @@
 import { createClient } from '@/utils/supabase/server'
+import { fetchAll } from '@/utils/supabase/fetch-all'
 import { SummaryCards } from '@/components/dashboard/SummaryCards'
 import { ExpensesChart } from '@/components/dashboard/ExpensesChart'
 import { TopVehiclesTable } from '@/components/dashboard/TopVehiclesTable'
@@ -90,35 +91,36 @@ export default async function DashboardPage() {
   const sixMonthsAgo = format(subMonths(new Date(), 6), 'yyyy-MM-dd')
   const startOfCurrentMonth = format(startOfMonth(new Date()), 'yyyy-MM-dd')
 
-  let ordersQuery = supabase
-    .from('orders')
-    .select('total_gross, order_date, branch_code, branch_id, branches(name)')
-    .gte('order_date', sixMonthsAgo)
-
-  if (!isAdmin && userBranchIds.length > 0) {
-    ordersQuery = ordersQuery.in('branch_id', userBranchIds)
-  }
-
-  const { data: orders } = await ordersQuery
+  // Stronicowane (fetchAll): 6 miesięcy zamówień to więcej niż 1000 wierszy, które daje jedno zapytanie
+  const orders = await fetchAll(() => {
+    let q = supabase
+      .from('orders')
+      .select('total_gross, order_date, branch_code, branch_id, branches(name)')
+      .gte('order_date', sixMonthsAgo)
+    if (!isAdmin && userBranchIds.length > 0) {
+      q = q.in('branch_id', userBranchIds)
+    }
+    return q.order('id')
+  })
 
   // Fetch order items with vehicle info for Top Vehicles calculation
-  let orderItemsQuery = supabase
-    .from('order_items')
-    .select(`
-      id,
-      total_gross,
-      vehicle_id,
-      orders!inner(order_date, branch_code, branch_id, branches(name)),
-      vehicles(id, plate_number, brand, model)
-    `)
-    .not('vehicle_id', 'is', null)
-    .gte('orders.order_date', startOfCurrentMonth)
-
-  if (!isAdmin && userBranchIds.length > 0) {
-    orderItemsQuery = orderItemsQuery.in('orders.branch_id', userBranchIds)
-  }
-
-  const { data: orderItems } = await orderItemsQuery
+  const orderItems = await fetchAll(() => {
+    let q = supabase
+      .from('order_items')
+      .select(`
+        id,
+        total_gross,
+        vehicle_id,
+        orders!inner(order_date, branch_code, branch_id, branches(name)),
+        vehicles(id, plate_number, brand, model)
+      `)
+      .not('vehicle_id', 'is', null)
+      .gte('orders.order_date', startOfCurrentMonth)
+    if (!isAdmin && userBranchIds.length > 0) {
+      q = q.in('orders.branch_id', userBranchIds)
+    }
+    return q.order('id')
+  })
 
   // Calculate Total Orders this month
   const totalOrdersAmount = orders

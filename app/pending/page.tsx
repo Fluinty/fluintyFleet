@@ -1,4 +1,5 @@
 import { createClient } from '@/utils/supabase/server'
+import { fetchAll } from '@/utils/supabase/fetch-all'
 import { PendingItemsTable } from '@/components/pending/PendingItemsTable'
 
 export default async function PendingPage() {
@@ -30,16 +31,16 @@ export default async function PendingPage() {
     }
 
     // Fetch pending items (new item-level view) - filtered by branch for managers
-    let pendingQuery = supabase
-        .from('unresolved_pending_items')
-        .select('*')
-        .order('order_date', { ascending: false })
-
-    if (!isAdmin && userBranchIds.length > 0) {
-        pendingQuery = pendingQuery.in('branch_id', userBranchIds)
-    }
-
-    const { data: pendingItems } = await pendingQuery
+    // Stronicowane (fetchAll): kolejka potrafi przekroczyć 1000 pozycji
+    const pendingItems = await fetchAll(() => {
+        let q = supabase
+            .from('unresolved_pending_items')
+            .select('*')
+        if (!isAdmin && userBranchIds.length > 0) {
+            q = q.in('branch_id', userBranchIds)
+        }
+        return q.order('order_date', { ascending: false }).order('item_id')
+    })
 
     // Fetch active vehicles for the resolver dropdown - filtered by branch for managers
     let vehiclesQuery = supabase
