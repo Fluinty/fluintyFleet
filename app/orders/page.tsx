@@ -1,5 +1,4 @@
 import { createClient } from '@/utils/supabase/server'
-import { fetchAll } from '@/utils/supabase/fetch-all'
 import { redirect } from 'next/navigation'
 import { OrdersFilters } from '@/components/orders/OrdersFilters'
 import { OrdersTable } from '@/components/orders/OrdersTable'
@@ -29,14 +28,19 @@ export default async function OrdersPage({
         redirect('/')
     }
 
+    // Parametry z adresu idą prosto do zapytania PostgREST, więc każdy ma twardą listę
+    // dopuszczalnych wartości: przecinek lub nawias w wyszukiwarce psuł składnię filtru .or(),
+    // a nieznana kolumna w sort dawała błąd 400 i pustą tabelę.
     const params = await searchParams;
-    const search = typeof params.search === 'string' ? params.search : ''
+    const search = (typeof params.search === 'string' ? params.search : '').replace(/[,()"\\]/g, '').trim()
     const branch = typeof params.branch === 'string' ? params.branch : ''
-    const status = typeof params.status === 'string' ? params.status : 'ALL'
-    const dateFrom = typeof params.dateFrom === 'string' ? params.dateFrom : ''
-    const dateTo = typeof params.dateTo === 'string' ? params.dateTo : ''
-    const sort = typeof params.sort === 'string' ? params.sort : 'order_date'
-    const dir = typeof params.dir === 'string' ? params.dir : 'desc'
+    const status = typeof params.status === 'string' && ['completed', 'pending'].includes(params.status) ? params.status : 'ALL'
+    const isIsoDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
+    const dateFrom = isIsoDate(params.dateFrom) ? params.dateFrom : ''
+    const dateTo = isIsoDate(params.dateTo) ? params.dateTo : ''
+    const SORTABLE = ['order_date', 'total_gross', 'intercars_id', 'status']
+    const sort = typeof params.sort === 'string' && SORTABLE.includes(params.sort) ? params.sort : 'order_date'
+    const dir = params.dir === 'asc' ? 'asc' : 'desc'
 
     // Orders may have branch_code instead of branch_id, so the branch filter matches on either
     let branchCode: string | null = null
@@ -49,39 +53,47 @@ export default async function OrdersPage({
         branchCode = selectedBranch?.code ?? null
     }
 
-    const sortDir = dir === 'desc' ? false : true
-
-    // Stronicowane (fetchAll): bez filtrów to cała historia zamówień, dużo ponad 1000 wierszy.
+    // Lista do przeglądania, nie do sumowania: pokazujemy najwyżej 1000 zamówień w wybranej
+    // kolejności i mówimy o tym wprost, zamiast ściągać całą historię z pozycjami do przeglądarki.
     // Drugie .order('id') daje stałą kolejność przy remisach w sortowanej kolumnie.
-    const orders = await fetchAll(() => {
-        let query = supabase
-            .from('orders')
-            .select('*, branches(name), order_items(*, vehicles(id, plate_number))')
+    const ORDERS_PAGE_LIMIT = 1000
 
-        if (search) {
-            query = query.or(`intercars_id.ilike.%${search}%,description.ilike.%${search}%`)
-        }
+    let query = supabase
+        .from('orders')
+        .select('*, branches(name), order_items(*, vehicles(id, plate_number))')
 
-        if (branch) {
-            query = branchCode
-                ? query.or(`branch_id.eq.${branch},branch_code.eq.${branchCode}`)
-                : query.eq('branch_id', branch)
-        }
+    if (search) {
+        query = query.or(`intercars_id.ilike.%${search}%,description.ilike.%${search}%`)
+    }
 
-        if (status !== 'ALL') {
-            query = query.eq('status', status)
-        }
+    if (branch) {
+        query = branchCode
+            ? query.or(`branch_id.eq.${branch},branch_code.eq.${branchCode}`)
+            : query.eq('branch_id', branch)
+    }
 
-        if (dateFrom) {
-            query = query.gte('order_date', dateFrom)
-        }
+    if (status !== 'ALL') {
+        query = query.eq('status', status)
+    }
 
-        if (dateTo) {
-            query = query.lte('order_date', dateTo)
-        }
+    if (dateFrom) {
+        query = query.gte('order_date', dateFrom)
+    }
 
-        return query.order(sort, { ascending: sortDir }).order('id')
-    })
+    if (dateTo) {
+        query = query.lte('order_date', dateTo)
+    }
+
+    const { data: orders, error: ordersError } = await query
+        .order(sort, { ascending: dir === 'asc' })
+        .order('id')
+        .limit(ORDERS_PAGE_LIMIT)
+
+    if (ordersError) {
+        throw new Error(`Zamówienia: zapytanie nie powiodło się: ${ordersError.message}`)
+    }
+
+    const ordersTruncated = (orders?.length ?? 0) >= ORDERS_PAGE_LIMIT
 
     const { data: branches } = await supabase.from('branches').select('id, name').order('name')
 
@@ -102,6 +114,11 @@ export default async function OrdersPage({
 
             <div className="flex flex-col space-y-4">
                 <OrdersFilters branches={branches || []} showBranchFilter={isAdmin} />
+                {ordersTruncated && (
+                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+                        Pokazuję {ORDERS_PAGE_LIMIT} zamówień spełniających kryteria. Zawęź zakres dat albo wpisz numer w wyszukiwarce, żeby zobaczyć pozostałe.
+                    </p>
+                )}
                 <Suspense fallback={<div>Ładowanie...</div>}>
                     <OrdersTable orders={orders || []} vehicles={vehicles || []} />
                 </Suspense>

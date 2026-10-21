@@ -6,8 +6,13 @@
 // - zapytanie budujemy od nowa w fabryce (makeQuery), bo każda strona dostaje inny .range();
 // - na końcu zawsze .order(...) po kolumnie unikalnej (np. id) — bez stałej kolejności strony
 //   mogłyby się nakładać albo gubić wiersze między sobą;
-// - błąd zapytania rzuca wyjątek zamiast zwracać część danych, żeby strona pokazała błąd,
-//   a nie zaniżoną sumę.
+// - pętla kończy się dopiero na PUSTEJ stronie, a nie na "krótszej niż 1000": gdyby ktoś obniżył
+//   "Max rows" w ustawieniach Supabase, krótsza strona nie oznaczałaby końca danych. Koszt to jedno
+//   dodatkowe, puste zapytanie, gdy ostatnia strona jest pełna;
+// - błąd zapytania rzuca wyjątek zamiast zwracać część danych, żeby strona pokazała błąd
+//   (app/error.tsx), a nie zaniżoną sumę;
+// - stronicowanie po offsecie: wiersz wstawiony albo usunięty w trakcie dociągania może
+//   przesunąć granicę strony o jeden. Przy renderowaniu serwerowym to pomijalne.
 
 const PAGE_SIZE = 1000
 
@@ -23,7 +28,6 @@ export async function fetchAll<T = any>(makeQuery: () => PageQuery<T>): Promise<
         }
         if (!data || data.length === 0) break
         rows.push(...data)
-        if (data.length < PAGE_SIZE) break
     }
     return rows
 }
