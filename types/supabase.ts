@@ -227,6 +227,7 @@ export type Database = {
                     eans: string[] | null
                     id: string
                     index_number: string | null
+                    is_warehouse: boolean
                     missing_quantity: number | null
                     name: string | null
                     order_id: string
@@ -252,6 +253,7 @@ export type Database = {
                     eans?: string[] | null
                     id?: string
                     index_number?: string | null
+                    is_warehouse?: boolean
                     missing_quantity?: number | null
                     name?: string | null
                     order_id: string
@@ -277,6 +279,7 @@ export type Database = {
                     eans?: string[] | null
                     id?: string
                     index_number?: string | null
+                    is_warehouse?: boolean
                     missing_quantity?: number | null
                     name?: string | null
                     order_id?: string

@@ -13,9 +13,10 @@ import {
     DialogTrigger,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { resolvePendingItem, resolvePendingOrderItems } from "@/app/actions/resolve-pending-item"
+import { resolvePendingItem, resolvePendingItemToWarehouse, resolvePendingOrderItems } from "@/app/actions/resolve-pending-item"
 import { useToast } from "@/components/ui/use-toast"
-import { Loader2, Car, Package } from "lucide-react"
+import { Loader2, Car, Package, Warehouse } from "lucide-react"
+import { isWarehouseEligible, WAREHOUSE_LABEL } from "@/lib/warehouse"
 import {
     Select,
     SelectContent,
@@ -45,6 +46,7 @@ interface ItemResolverProps {
     vehicles: VehicleOption[]
     fullWidth?: boolean
     currentPlate?: string | null  // If provided, shows edit mode
+    isWarehouse?: boolean         // If true, the item currently sits on the warehouse (edit mode)
 }
 
 export function ItemResolver({
@@ -54,7 +56,8 @@ export function ItemResolver({
     allItems = [],
     vehicles,
     fullWidth = false,
-    currentPlate = null
+    currentPlate = null,
+    isWarehouse = false
 }: ItemResolverProps) {
     const router = useRouter()
     const [open, setOpen] = useState(false)
@@ -65,7 +68,10 @@ export function ItemResolver({
     const { toast } = useToast()
 
     const hasMultipleItems = allItems.length > 1
-    const isEditMode = !!currentPlate
+    const isEditMode = !!currentPlate || isWarehouse
+    // Tylko olej silnikowy i AdBlue mogą iść na magazyn (lista w lib/warehouse.ts)
+    const warehouseEligible = isWarehouseEligible(itemName)
+    const currentLabel = isWarehouse ? WAREHOUSE_LABEL : currentPlate
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -107,7 +113,40 @@ export function ItemResolver({
         }
     }
 
-    // Edit mode: show assigned plate as clickable badge
+    const handleWarehouse = async () => {
+        setLoading(true)
+        setError("")
+        try {
+            const result = await resolvePendingItemToWarehouse(itemId)
+            if (result.error) {
+                setError(result.error)
+            } else {
+                setOpen(false)
+                setPlate("")
+                setApplyToAll(false)
+                toast({
+                    title: "Sukces",
+                    description: isEditMode
+                        ? "Pozycja została przeniesiona na magazyn."
+                        : "Pozycja została przypisana na magazyn.",
+                })
+                router.refresh()
+            }
+        } catch {
+            setError("Wystąpił nieoczekiwany błąd.")
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const warehouseButton = warehouseEligible && !isWarehouse ? (
+        <Button type="button" variant="outline" disabled={loading} onClick={handleWarehouse}>
+            <Warehouse className="h-4 w-4 mr-1" />
+            {isEditMode ? "Przenieś na magazyn" : "Na magazyn"}
+        </Button>
+    ) : null
+
+    // Edit mode: show assigned plate (or warehouse) as clickable badge
     if (isEditMode && !fullWidth) {
         return (
             <Dialog open={open} onOpenChange={(isOpen) => {
@@ -116,11 +155,13 @@ export function ItemResolver({
             }}>
                 <DialogTrigger asChild>
                     <button
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold hover:bg-emerald-200 transition-colors cursor-pointer"
+                        className={isWarehouse
+                            ? "inline-flex items-center gap-1 px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-semibold hover:bg-indigo-200 transition-colors cursor-pointer"
+                            : "inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold hover:bg-emerald-200 transition-colors cursor-pointer"}
                         title="Kliknij, aby zmienić przypisanie"
                     >
-                        <Car className="h-3 w-3" />
-                        {currentPlate}
+                        {isWarehouse ? <Warehouse className="h-3 w-3" /> : <Car className="h-3 w-3" />}
+                        {currentLabel}
                     </button>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-[425px]">
@@ -131,9 +172,9 @@ export function ItemResolver({
                         </DialogTitle>
                         <DialogDescription>
                             {itemName ? (
-                                <span>Aktualnie: <strong>{currentPlate}</strong> dla pozycji: <strong>{itemName}</strong></span>
+                                <span>Aktualnie: <strong>{currentLabel}</strong> dla pozycji: <strong>{itemName}</strong></span>
                             ) : (
-                                <span>Aktualnie przypisany: <strong>{currentPlate}</strong></span>
+                                <span>Aktualnie przypisany: <strong>{currentLabel}</strong></span>
                             )}
                         </DialogDescription>
                     </DialogHeader>
@@ -178,6 +219,7 @@ export function ItemResolver({
                             {error && <div className="text-red-500 text-sm text-center">{error}</div>}
                         </div>
                         <DialogFooter>
+                            {warehouseButton}
                             <Button type="submit" disabled={loading || !plate || plate === currentPlate}>
                                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                 {applyToAll && hasMultipleItems ? "Zmień wszystkie" : "Zmień przypisanie"}
@@ -256,6 +298,7 @@ export function ItemResolver({
                         {error && <div className="text-red-500 text-sm text-center">{error}</div>}
                     </div>
                     <DialogFooter>
+                        {warehouseButton}
                         <Button type="submit" disabled={loading || !plate}>
                             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             {applyToAll && hasMultipleItems ? "Przypisz wszystkie" : "Przypisz"}

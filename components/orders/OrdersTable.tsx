@@ -29,6 +29,7 @@ interface OrderItem {
     required_quantity: number | null
     total_net: number | null
     vehicle_id: string | null
+    is_warehouse?: boolean | null
     vehicles?: { id: string; plate_number: string } | null
 }
 
@@ -165,7 +166,7 @@ export function OrdersTable({ orders, vehicles }: { orders: Order[]; vehicles: V
                                                         itemName={item.name}
                                                         allItems={order.order_items?.map(i => ({ id: i.id, name: i.name, sku: i.sku, total_gross: i.total_net })) || []}
                                                         vehicles={vehicles}
-                                                        currentPlate={item.vehicles?.plate_number}
+                                                        currentPlate={item.vehicles?.plate_number} isWarehouse={!!item.is_warehouse}
                                                     />
                                                 </div>
                                             </div>
@@ -274,7 +275,7 @@ export function OrdersTable({ orders, vehicles }: { orders: Order[]; vehicles: V
                                                                                 itemName={item.name}
                                                                                 allItems={order.order_items?.map(i => ({ id: i.id, name: i.name, sku: i.sku, total_gross: i.total_net })) || []}
                                                                                 vehicles={vehicles}
-                                                                                currentPlate={item.vehicles?.plate_number}
+                                                                                currentPlate={item.vehicles?.plate_number} isWarehouse={!!item.is_warehouse}
                                                                             />
                                                                         </TableCell>
                                                                     </TableRow>
