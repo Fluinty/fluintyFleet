@@ -38,6 +38,7 @@ export async function resolvePendingOrder(orderId: string, plate: string) {
         .from("order_items")
         .update({
             vehicle_id: vehicle.id,
+            is_warehouse: false,
             resolved: true,
             resolved_at: new Date().toISOString(),
             resolved_by: "user",

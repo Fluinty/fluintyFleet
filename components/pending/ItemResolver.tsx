@@ -118,17 +118,21 @@ export function ItemResolver({
         setError("")
         try {
             const result = await resolvePendingItemToWarehouse(itemId)
-            if (result.error) {
+            if ("error" in result && result.error) {
                 setError(result.error)
             } else {
                 setOpen(false)
                 setPlate("")
                 setApplyToAll(false)
+                const warning = "warning" in result ? result.warning : undefined
                 toast({
-                    title: "Sukces",
-                    description: isEditMode
-                        ? "Pozycja została przeniesiona na magazyn."
-                        : "Pozycja została przypisana na magazyn.",
+                    title: warning ? "Uwaga" : "Sukces",
+                    description: warning
+                        ? warning
+                        : isEditMode
+                            ? "Pozycja została przeniesiona na magazyn."
+                            : "Pozycja została przypisana na magazyn.",
+                    variant: warning ? "destructive" : undefined,
                 })
                 router.refresh()
             }
@@ -139,7 +143,8 @@ export function ItemResolver({
         }
     }
 
-    const warehouseButton = warehouseEligible && !isWarehouse ? (
+    // Magazyn zawsze dotyczy jednej pozycji — przy "zastosuj do wszystkich" przycisk znika
+    const warehouseButton = warehouseEligible && !isWarehouse && !(applyToAll && hasMultipleItems) ? (
         <Button type="button" variant="outline" disabled={loading} onClick={handleWarehouse}>
             <Warehouse className="h-4 w-4 mr-1" />
             {isEditMode ? "Przenieś na magazyn" : "Na magazyn"}

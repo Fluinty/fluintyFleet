@@ -6,6 +6,8 @@ import { revalidatePath } from "next/cache"
 import { checkBudgetAlerts } from "./check-budget"
 import { isWarehouseEligible } from "@/lib/warehouse"
 
+type Supabase = Awaited<ReturnType<typeof createClient>>
+
 function revalidateAfterResolve() {
     revalidatePath("/pending")
     revalidatePath("/")
@@ -14,24 +16,35 @@ function revalidateAfterResolve() {
 
 /**
  * Close the parent order when nothing is left to verify.
- * The DB trigger only looks at vehicle_id, so warehouse items would keep the order
- * pending forever — this covers that case. Only moves 'pending' -> 'completed'.
+ * The DB trigger only looks at vehicle_id, so an order with a warehouse item would stay
+ * 'pending' forever — this covers it in every resolve path, whatever the trigger does.
+ * Only moves 'pending' -> 'completed'. Returns false when the status could not be checked/updated.
  */
-async function completeOrderIfResolved(supabase: Awaited<ReturnType<typeof createClient>>, orderId: string) {
-    const { count } = await supabase
+async function completeOrderIfResolved(supabase: Supabase, orderId: string): Promise<boolean> {
+    const { count, error: countError } = await supabase
         .from("order_items")
         .select("id", { count: "exact", head: true })
         .eq("order_id", orderId)
         .is("vehicle_id", null)
         .eq("is_warehouse", false)
 
-    if (count === 0) {
-        await supabase
-            .from("orders")
-            .update({ status: "completed" })
-            .eq("id", orderId)
-            .eq("status", "pending")
+    if (countError || count === null) {
+        console.error("completeOrderIfResolved: nie udało się policzyć pozycji", orderId, countError?.message)
+        return false
     }
+    if (count > 0) return true
+
+    const { error: updateError } = await supabase
+        .from("orders")
+        .update({ status: "completed" })
+        .eq("id", orderId)
+        .eq("status", "pending")
+
+    if (updateError) {
+        console.error("completeOrderIfResolved: nie udało się domknąć zamówienia", orderId, updateError.message)
+        return false
+    }
+    return true
 }
 
 /**
@@ -54,7 +67,7 @@ export async function resolvePendingItem(itemId: string, plate: string) {
     // 2. Update the order item with vehicle_id and mark as resolved
     // Note: A database trigger automatically updates the parent order's status to 'completed'
     // when all items have vehicle_id assigned
-    const { error: oError } = await supabase
+    const { data: updated, error: oError } = await supabase
         .from("order_items")
         .update({
             vehicle_id: vehicle.id,
@@ -64,10 +77,15 @@ export async function resolvePendingItem(itemId: string, plate: string) {
             resolved_by: "user", // Placeholder for auth user
         })
         .eq("id", itemId)
+        .select("order_id")
+        .single()
 
-    if (oError) {
+    if (oError || !updated) {
         return { error: "Błąd podczas aktualizacji pozycji zamówienia." }
     }
+
+    // Warehouse items keep vehicle_id NULL, so the trigger alone won't close the order
+    await completeOrderIfResolved(supabase, updated.order_id)
 
     // Trigger alert check
     await checkBudgetAlerts()
@@ -97,7 +115,7 @@ export async function resolvePendingItemToWarehouse(itemId: string) {
         return { error: "Tej pozycji nie można przypisać na magazyn. Na magazyn idą tylko olej silnikowy i AdBlue." }
     }
 
-    const { error: uError } = await supabase
+    const { data: updated, error: uError } = await supabase
         .from("order_items")
         .update({
             vehicle_id: null,
@@ -107,19 +125,26 @@ export async function resolvePendingItemToWarehouse(itemId: string) {
             resolved_by: "user",
         })
         .eq("id", itemId)
+        .select("id")
 
     if (uError) {
         return { error: "Błąd podczas przypisywania pozycji na magazyn." }
     }
+    if (!updated || updated.length === 0) {
+        return { error: "Brak uprawnień do tej pozycji." }
+    }
 
-    await completeOrderIfResolved(supabase, item.order_id)
+    const closed = await completeOrderIfResolved(supabase, item.order_id)
 
     revalidateAfterResolve()
-    return { success: true }
+    return closed
+        ? { success: true }
+        : { success: true, warning: "Pozycja jest na magazynie, ale zamówienia nie udało się domknąć." }
 }
 
 /**
- * Resolve all items in an order at once with the same vehicle
+ * Resolve all items in an order at once with the same vehicle.
+ * Items already put on the warehouse are left alone — that was a deliberate decision.
  */
 export async function resolvePendingOrderItems(orderId: string, plate: string) {
     const supabase = await createClient()
@@ -135,19 +160,20 @@ export async function resolvePendingOrderItems(orderId: string, plate: string) {
         return { error: "Nie znaleziono pojazdu o podanym numerze rejestracyjnym." }
     }
 
-    // 2. Update all items in the order
+    // 2. Update all non-warehouse items in the order
     // Note: A database trigger automatically updates the parent order's status to 'completed'
     // when all items have vehicle_id assigned
-    const { error: itemsError, count } = await supabase
+    const { data: updatedItems, error: itemsError } = await supabase
         .from("order_items")
         .update({
             vehicle_id: vehicle.id,
-            is_warehouse: false,
             resolved: true,
             resolved_at: new Date().toISOString(),
             resolved_by: "user",
         })
         .eq("order_id", orderId)
+        .eq("is_warehouse", false)
+        .select("id")
 
     if (itemsError) {
         return { error: "Błąd podczas aktualizacji pozycji zamówienia." }
@@ -167,11 +193,13 @@ export async function resolvePendingOrderItems(orderId: string, plate: string) {
         console.warn("Warning: Could not update order vehicle_id (backwards compatibility):", orderError.message)
     }
 
+    await completeOrderIfResolved(supabase, orderId)
+
     // Trigger alert check
     await checkBudgetAlerts()
 
     revalidateAfterResolve()
-    return { success: true, itemsUpdated: count }
+    return { success: true, itemsUpdated: updatedItems?.length ?? 0 }
 }
 
 /**

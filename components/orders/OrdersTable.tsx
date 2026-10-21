@@ -164,7 +164,7 @@ export function OrdersTable({ orders, vehicles }: { orders: Order[]; vehicles: V
                                                         itemId={item.id}
                                                         orderId={order.id}
                                                         itemName={item.name}
-                                                        allItems={order.order_items?.map(i => ({ id: i.id, name: i.name, sku: i.sku, total_gross: i.total_net })) || []}
+                                                        allItems={order.order_items?.filter(i => !i.is_warehouse).map(i => ({ id: i.id, name: i.name, sku: i.sku, total_gross: i.total_net })) || []}
                                                         vehicles={vehicles}
                                                         currentPlate={item.vehicles?.plate_number} isWarehouse={!!item.is_warehouse}
                                                     />
@@ -273,7 +273,7 @@ export function OrdersTable({ orders, vehicles }: { orders: Order[]; vehicles: V
                                                                                 itemId={item.id}
                                                                                 orderId={order.id}
                                                                                 itemName={item.name}
-                                                                                allItems={order.order_items?.map(i => ({ id: i.id, name: i.name, sku: i.sku, total_gross: i.total_net })) || []}
+                                                                                allItems={order.order_items?.filter(i => !i.is_warehouse).map(i => ({ id: i.id, name: i.name, sku: i.sku, total_gross: i.total_net })) || []}
                                                                                 vehicles={vehicles}
                                                                                 currentPlate={item.vehicles?.plate_number} isWarehouse={!!item.is_warehouse}
                                                                             />
