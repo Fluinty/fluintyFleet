@@ -6,7 +6,7 @@ import { StatsSummaryCards } from '@/components/statistics/StatsSummaryCards'
 import { SpendingByBranchChart } from '@/components/statistics/SpendingByBranchChart'
 import { TopVehiclesList } from '@/components/statistics/TopVehiclesList'
 import { BranchComparisonTable } from '@/components/statistics/BranchComparisonTable'
-import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
+import { format, startOfMonth, subMonths, addMonths } from 'date-fns'
 import { pl } from 'date-fns/locale'
 
 interface PageProps {
@@ -39,13 +39,13 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
     const selectedMonth = params.month || currentMonthStart
     const selectedBranch = params.branch || null
 
-    // Calculate date range for the selected month
+    // Zakres miesiąca jako [początek, początek następnego). orders.order_date to timestamp,
+    // więc warunek "<= 2026-09-30" znaczył "<= 30.09 00:00" i gubił cały ostatni dzień miesiąca.
     const monthStart = selectedMonth
-    const monthEnd = format(endOfMonth(new Date(selectedMonth)), 'yyyy-MM-dd')
+    const nextMonthStart = format(addMonths(new Date(selectedMonth), 1), 'yyyy-MM-dd')
 
     // Previous month for comparison
     const prevMonthStart = format(subMonths(new Date(selectedMonth), 1), 'yyyy-MM-dd')
-    const prevMonthEnd = format(endOfMonth(subMonths(new Date(selectedMonth), 1)), 'yyyy-MM-dd')
 
     // Fetch branches for filter dropdown
     const { data: branches } = await supabase
@@ -56,7 +56,7 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
 
     // Pozycje z autem w zadanym przedziale dat. Stronicowane (fetchAll), bo miesiąc może mieć
     // więcej niż 1000 pozycji, a jedno zapytanie zwraca najwyżej tyle.
-    const fetchAssignedItems = (from: string, to: string) => fetchAll(() => {
+    const fetchAssignedItems = (from: string, toExclusive: string) => fetchAll(() => {
         let q = supabase
             .from('order_items')
             .select(`
@@ -67,7 +67,7 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
             `)
             .not('vehicle_id', 'is', null)
             .gte('orders.order_date', from)
-            .lte('orders.order_date', to)
+            .lt('orders.order_date', toExclusive)
         if (selectedBranch) {
             q = q.eq('orders.branch_code', selectedBranch)
         }
@@ -75,10 +75,10 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
     })
 
     // Current month totals
-    const currentItems = await fetchAssignedItems(monthStart, monthEnd)
+    const currentItems = await fetchAssignedItems(monthStart, nextMonthStart)
 
     // Previous month totals (for MoM comparison)
-    const prevItems = await fetchAssignedItems(prevMonthStart, prevMonthEnd)
+    const prevItems = await fetchAssignedItems(prevMonthStart, monthStart)
 
     // Calculate summary metrics
     const totalSpending = currentItems?.reduce((sum, item) => sum + (item.total_gross || 0), 0) || 0
