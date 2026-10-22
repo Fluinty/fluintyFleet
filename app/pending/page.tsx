@@ -1,5 +1,6 @@
 import { createClient } from '@/utils/supabase/server'
 import { fetchAll } from '@/utils/supabase/fetch-all'
+import { pluralPl } from '@/utils/format'
 import { PendingItemsTable } from '@/components/pending/PendingItemsTable'
 
 export default async function PendingPage() {
@@ -61,7 +62,7 @@ export default async function PendingPage() {
                 <h2 className="text-3xl font-bold tracking-tight">Wymagana Weryfikacja</h2>
                 {pendingItems && pendingItems.length > 0 && (
                     <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-700 text-sm font-semibold">
-                        {pendingItems.length} {pendingItems.length === 1 ? 'pozycja' : pendingItems.length < 5 ? 'pozycje' : 'pozycji'}
+                        {pendingItems.length} {pluralPl(pendingItems.length, ['pozycja', 'pozycje', 'pozycji'])}
                     </span>
                 )}
             </div>

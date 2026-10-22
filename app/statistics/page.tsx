@@ -13,11 +13,13 @@ interface PageProps {
     searchParams: Promise<{ month?: string; branch?: string }>
 }
 
-// Etykieta dla zamówień bez kodu oddziału (dziś: faktury ręczne, które dostają tylko branch_id)
-const NO_BRANCH_CODE = 'UNKNOWN'
-const NO_BRANCH_LABEL = 'Bez kodu oddziału'
+// Zamówienie bez kodu oddziału i bez branch_id (rzadkość: import wpisuje kod, faktura ręczna wpisuje id)
+const NO_BRANCH_CODE = '—'
+const NO_BRANCH_LABEL = 'Bez oddziału'
+// Kod z importu, którego nie ma w tabeli oddziałów (dziś: HWR)
+const UNLISTED_BRANCH_LABEL = 'Nieznany oddział'
 
-type OrderRef = { id: string; order_date: string; branch_code: string | null }
+type OrderRef = { id: string; order_date: string; branch_code: string | null; branch_id: string | null }
 type MonthItem = {
     id: string
     total_gross: number | null
@@ -25,7 +27,8 @@ type MonthItem = {
     is_warehouse: boolean | null
     orders: OrderRef | OrderRef[]
 }
-type MonthOrder = { id: string; total_gross: number | null; branch_code: string | null }
+type MonthOrder = { id: string; total_gross: number | null; branch_code: string | null; branch_id: string | null }
+type BranchRow = { id: string; name: string; code: string }
 
 const gross = (row: { total_gross: number | null } | null | undefined) => Number(row?.total_gross) || 0
 const orderOf = (item: MonthItem): OrderRef | undefined => Array.isArray(item.orders) ? item.orders[0] : item.orders
@@ -65,23 +68,39 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
     const nextMonthStart = format(addMonths(new Date(selectedMonth), 1), 'yyyy-MM-dd')
     const prevMonthStart = format(subMonths(new Date(selectedMonth), 1), 'yyyy-MM-dd')
 
-    // Fetch branches for filter dropdown
-    const { data: branches } = await supabase
+    // Wszystkie oddziały do rozstrzygania po branch_id; do listy filtra tylko aktywne
+    const { data: allBranchesData } = await supabase
         .from('branches')
-        .select('id, name, code')
-        .eq('is_active', true)
+        .select('id, name, code, is_active')
         .order('name')
+    const allBranches = (allBranchesData || []) as (BranchRow & { is_active: boolean | null })[]
+    const branches = allBranches.filter(b => b.is_active)
+    const branchById = new Map(allBranches.map(b => [b.id, b]))
+    const branchCodeToName: Record<string, string> = { [NO_BRANCH_CODE]: NO_BRANCH_LABEL }
+    allBranches.forEach(b => { branchCodeToName[b.code] = b.name })
+
+    // Oddział zamówienia: kod z importu, a gdy go brak (faktura ręczna), kod oddziału spod branch_id.
+    // Gdy oba pola są ustawione, nigdy się nie różnią (sprawdzone na produkcji 22.10).
+    const branchCodeOf = (o: { branch_code: string | null; branch_id: string | null } | undefined) =>
+        o?.branch_code || (o?.branch_id ? branchById.get(o.branch_id)?.code : undefined) || NO_BRANCH_CODE
+    const branchNameOf = (code: string) => branchCodeToName[code] || UNLISTED_BRANCH_LABEL
+
+    // Filtr oddziału z listy (kod) musi łapać oba zapisy: kod z importu i samo branch_id z faktury ręcznej
+    const selectedBranchId = selectedBranch ? allBranches.find(b => b.code === selectedBranch)?.id : undefined
+    const branchFilter = selectedBranch
+        ? (selectedBranchId ? `branch_code.eq.${selectedBranch},branch_id.eq.${selectedBranchId}` : `branch_code.eq.${selectedBranch}`)
+        : null
 
     // Nagłówki zamówień z miesiąca: ta sama miara, co karta „Zakupy (ten miesiąc)” na dashboardzie.
     // Stronicowane (fetchAll), bo jedno zapytanie zwraca najwyżej 1000 wierszy.
     const fetchOrders = (from: string, toExclusive: string) => fetchAll<MonthOrder>(() => {
         let q = supabase
             .from('orders')
-            .select('id, total_gross, branch_code')
+            .select('id, total_gross, branch_code, branch_id')
             .gte('order_date', from)
             .lt('order_date', toExclusive)
-        if (selectedBranch) {
-            q = q.eq('branch_code', selectedBranch)
+        if (branchFilter) {
+            q = q.or(branchFilter)
         }
         return q.order('id')
     })
@@ -95,12 +114,12 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
                 total_gross,
                 vehicle_id,
                 is_warehouse,
-                orders!inner(id, order_date, branch_code)
+                orders!inner(id, order_date, branch_code, branch_id)
             `)
             .gte('orders.order_date', from)
             .lt('orders.order_date', toExclusive)
-        if (selectedBranch) {
-            q = q.eq('orders.branch_code', selectedBranch)
+        if (branchFilter) {
+            q = q.or(branchFilter, { referencedTable: 'orders' })
         }
         return q.order('id')
     })
@@ -122,8 +141,11 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
     const assignedTotal = assignedItems.reduce((sum, i) => sum + gross(i), 0)
     const queueTotal = queueItems.reduce((sum, i) => sum + gross(i), 0)
     const warehouseTotal = warehouseItems.reduce((sum, i) => sum + gross(i), 0)
-    // Import zapisuje nagłówek równy sumie pozycji; gdyby kiedyś przestał, różnica ma być widoczna, nie ukryta
+    // Nagłówek z importu różni się od sumy pozycji o grosze z zaokrągleń (wrzesień 2026: 2,22 zł na 77 zamówień).
+    // Większa różnica znaczy, że pozycje nie weszły w całości, i ma być widoczna, nie ukryta.
     const headerVsItems = totalPurchases - (assignedTotal + queueTotal + warehouseTotal)
+    // Zdanie „ta sama liczba, co na dashboardzie” jest prawdziwe tylko dla bieżącego miesiąca bez filtra oddziału
+    const sameAsDashboard = !selectedBranch && selectedMonth === currentMonthStart
 
     const vehiclesWithOrders = new Set(assignedItems.map(i => i.vehicle_id)).size
     const avgPerVehicle = vehiclesWithOrders > 0 ? assignedTotal / vehiclesWithOrders : 0
@@ -145,23 +167,20 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
         return entry
     }
     currentOrders.forEach(o => {
-        const entry = aggFor(o.branch_code || NO_BRANCH_CODE)
+        const entry = aggFor(branchCodeOf(o))
         entry.purchases += gross(o)
         entry.orders.add(o.id)
     })
     currentItems.forEach(item => {
-        const entry = aggFor(orderOf(item)?.branch_code || NO_BRANCH_CODE)
+        const entry = aggFor(branchCodeOf(orderOf(item)))
         entry[bucketOf(item)] += gross(item)
         if (item.vehicle_id) entry.vehicles.add(item.vehicle_id)
     })
 
-    const branchCodeToName: Record<string, string> = { [NO_BRANCH_CODE]: NO_BRANCH_LABEL }
-    branches?.forEach(b => { branchCodeToName[b.code] = b.name })
-
     const branchComparison = Array.from(branchAgg.entries())
         .map(([code, d]) => ({
             branch_code: code,
-            branch_name: branchCodeToName[code] || code,
+            branch_name: branchNameOf(code),
             orders: d.orders.size,
             vehicles: d.vehicles.size,
             purchases: d.purchases,
@@ -179,7 +198,7 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
         warehouse: r.warehouse,
     }))
 
-    // Top vehicles by spending (tylko pozycje przypisane do aut)
+    // Top vehicles by spending (tylko pozycje przypisane do aut); order_count liczy zamówienia, nie pozycje
     const vehicleSpendingMap = new Map<string, {
         id: string
         plate_number: string
@@ -187,6 +206,7 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
         model: string | null
         spending: number
         order_count: number
+        orderIds: Set<string>
     }>()
 
     const vehicleIds = [...new Set(assignedItems.map(i => i.vehicle_id as string))]
@@ -210,17 +230,21 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
                 brand: vehicle?.brand || null,
                 model: vehicle?.model || null,
                 spending: 0,
-                order_count: 0
+                order_count: 0,
+                orderIds: new Set<string>(),
             })
         }
         const entry = vehicleSpendingMap.get(vehicleId)!
         entry.spending += gross(item)
-        entry.order_count += 1
+        const orderId = orderOf(item)?.id
+        if (orderId) entry.orderIds.add(orderId)
+        entry.order_count = entry.orderIds.size
     })
 
     const topVehicles = Array.from(vehicleSpendingMap.values())
         .sort((a, b) => b.spending - a.spending)
         .slice(0, 5)
+        .map(v => ({ id: v.id, plate_number: v.plate_number, brand: v.brand, model: v.model, spending: v.spending, order_count: v.order_count }))
 
     // Format month display
     const monthDisplay = format(new Date(selectedMonth), 'LLLL yyyy', { locale: pl })
@@ -252,6 +276,7 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
                 warehouseTotal={warehouseTotal}
                 warehouseItems={warehouseItems.length}
                 headerVsItems={headerVsItems}
+                sameAsDashboard={sameAsDashboard}
             />
 
             {/* Charts Row */}
@@ -261,7 +286,7 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
             </div>
 
             {/* Branch Comparison Table */}
-            <BranchComparisonTable data={branchComparison} />
+            <BranchComparisonTable data={branchComparison} totalVehicles={vehiclesWithOrders} />
         </div>
     )
 }

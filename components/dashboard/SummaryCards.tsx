@@ -1,4 +1,4 @@
-import { Car, ShoppingCart, AlertTriangle, Bell, TrendingUp, TrendingDown } from "lucide-react"
+import { Car, AlertTriangle, Bell, TrendingUp } from "lucide-react"
 import Link from "next/link"
 
 interface SummaryCardsProps {

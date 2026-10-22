@@ -21,9 +21,10 @@ interface BranchStats {
 
 interface BranchComparisonTableProps {
     data: BranchStats[]
+    totalVehicles: number   // pojazdy liczone raz; auto z zakupami w dwóch oddziałach w wierszach liczy się dwa razy
 }
 
-export function BranchComparisonTable({ data }: BranchComparisonTableProps) {
+export function BranchComparisonTable({ data, totalVehicles }: BranchComparisonTableProps) {
     if (data.length === 0) {
         return (
             <div className="rounded-xl md:rounded-2xl bg-white/80 border border-slate-200/60 p-6 shadow-lg">
@@ -38,17 +39,16 @@ export function BranchComparisonTable({ data }: BranchComparisonTableProps) {
     // Calculate totals
     const totals = data.reduce((acc, row) => ({
         orders: acc.orders + row.orders,
-        vehicles: acc.vehicles + row.vehicles,
         purchases: acc.purchases + row.purchases,
         assigned: acc.assigned + row.assigned,
         queue: acc.queue + row.queue,
         warehouse: acc.warehouse + row.warehouse,
-    }), { orders: 0, vehicles: 0, purchases: 0, assigned: 0, queue: 0, warehouse: 0 })
+    }), { orders: 0, purchases: 0, assigned: 0, queue: 0, warehouse: 0 })
 
     return (
         <div className="rounded-xl md:rounded-2xl bg-white/80 border border-slate-200/60 p-6 shadow-lg overflow-hidden">
             <h3 className="text-lg font-semibold text-slate-800 mb-1">Porównanie Oddziałów</h3>
-            <p className="text-xs text-slate-500 mb-4">Oddział z nagłówka zamówienia. Zakupy = przypisane + w kolejce + magazyn.</p>
+            <p className="text-xs text-slate-500 mb-4">Oddział z zamówienia. Zakupy = przypisane + do weryfikacji + magazyn.</p>
             <div className="overflow-x-auto">
                 <Table>
                     <TableHeader>
@@ -58,7 +58,7 @@ export function BranchComparisonTable({ data }: BranchComparisonTableProps) {
                             <TableHead className="text-right text-slate-600">Pojazdy</TableHead>
                             <TableHead className="text-right text-slate-600">Zakupy</TableHead>
                             <TableHead className="text-right text-slate-600">Przypisane</TableHead>
-                            <TableHead className="text-right text-slate-600">W kolejce</TableHead>
+                            <TableHead className="text-right text-slate-600">Do weryfikacji</TableHead>
                             <TableHead className="text-right text-slate-600">Magazyn</TableHead>
                         </TableRow>
                     </TableHeader>
@@ -67,7 +67,9 @@ export function BranchComparisonTable({ data }: BranchComparisonTableProps) {
                             <TableRow key={row.branch_code} className="border-slate-100 hover:bg-slate-50/50">
                                 <TableCell className="font-medium text-slate-800">
                                     {row.branch_name}
-                                    <span className="ml-2 text-xs text-slate-400">({row.branch_code})</span>
+                                    {row.branch_code !== '—' && (
+                                        <span className="ml-2 text-xs text-slate-400">({row.branch_code})</span>
+                                    )}
                                 </TableCell>
                                 <TableCell className="text-right text-slate-600">{row.orders}</TableCell>
                                 <TableCell className="text-right text-slate-600">{row.vehicles}</TableCell>
@@ -89,7 +91,7 @@ export function BranchComparisonTable({ data }: BranchComparisonTableProps) {
                         <TableRow className="border-t-2 border-slate-200 bg-slate-50/50 font-semibold">
                             <TableCell className="text-slate-800">Łącznie</TableCell>
                             <TableCell className="text-right text-slate-700">{totals.orders}</TableCell>
-                            <TableCell className="text-right text-slate-700">{totals.vehicles}</TableCell>
+                            <TableCell className="text-right text-slate-700" title="Pojazd liczony raz, nawet gdy ma zakupy w kilku oddziałach">{totalVehicles}</TableCell>
                             <TableCell className="text-right text-slate-800">{formatCurrency(totals.purchases)}</TableCell>
                             <TableCell className="text-right text-emerald-700">{formatCurrency(totals.assigned)}</TableCell>
                             <TableCell className="text-right text-amber-700">{formatCurrency(totals.queue)}</TableCell>

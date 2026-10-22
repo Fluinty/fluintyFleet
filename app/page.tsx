@@ -4,7 +4,7 @@ import { SummaryCards } from '@/components/dashboard/SummaryCards'
 import { ExpensesChart } from '@/components/dashboard/ExpensesChart'
 import { TopVehiclesTable } from '@/components/dashboard/TopVehiclesTable'
 import { RecentPendingItems } from '@/components/dashboard/RecentPendingItems'
-import { subMonths, startOfMonth, format, isAfter, addDays } from 'date-fns'
+import { subMonths, startOfMonth, format, addDays } from 'date-fns'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -127,7 +127,7 @@ export default async function DashboardPage() {
     ?.filter(o => o.order_date >= startOfCurrentMonth)
     .reduce((sum, o) => sum + (o.total_gross || 0), 0) || 0
 
-  // Ile z tegomiesięcznych zakupów czeka jeszcze na przypisanie do auta (bez pozycji magazynowych)
+  // Ile z zakupów z tego miesiąca czeka jeszcze na przypisanie do auta (bez pozycji magazynowych)
   const queueItems = await fetchAll(() => {
     let q = supabase
       .from('order_items')
@@ -163,7 +163,8 @@ export default async function DashboardPage() {
   }))
 
   // Calculate Top Vehicles (This Month) from order items
-  const topVehiclesMap = new Map<string, any>()
+  type TopVehicle = { id: string; plate_number: string; brand: string; model: string; branch_name: string; total_spent: number; order_count: number }
+  const topVehiclesMap = new Map<string, TopVehicle>()
 
   orderItems?.forEach(item => {
     const vData = Array.isArray(item.vehicles) ? item.vehicles[0] : item.vehicles
@@ -185,7 +186,7 @@ export default async function DashboardPage() {
         order_count: 0
       })
     }
-    const v = topVehiclesMap.get(plate)
+    const v = topVehiclesMap.get(plate)!
     v.total_spent += item.total_gross || 0
     v.order_count += 1
   })

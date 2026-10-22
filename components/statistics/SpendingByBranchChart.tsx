@@ -17,9 +17,9 @@ interface SpendingByBranchChartProps {
 
 // Jeden słupek na oddział, złożony z trzech koszyków; suma słupka = zakupy oddziału
 const SERIES = [
-    { key: "assigned", name: "Przypisane do aut", color: "#14b8a6" },   // teal-500
-    { key: "queue", name: "W kolejce", color: "#f59e0b" },              // amber-500
-    { key: "warehouse", name: "Magazyn", color: "#6366f1" },            // indigo-500
+    { key: "assigned", name: "Przypisane do pojazdów", color: "#14b8a6" },   // teal-500
+    { key: "queue", name: "Do weryfikacji", color: "#f59e0b" },              // amber-500
+    { key: "warehouse", name: "Magazyn", color: "#6366f1" },                 // indigo-500
 ] as const
 
 export function SpendingByBranchChart({ data }: SpendingByBranchChartProps) {
@@ -56,7 +56,7 @@ export function SpendingByBranchChart({ data }: SpendingByBranchChartProps) {
                             tick={{ fill: '#334155', fontSize: 13, fontWeight: 500 }}
                         />
                         <Tooltip
-                            formatter={(value: any, name: any) => [formatCurrency(Number(value)), name]}
+                            formatter={(value, name) => [formatCurrency(Number(value)), String(name)]}
                             contentStyle={{
                                 backgroundColor: 'white',
                                 border: '1px solid #e2e8f0',
@@ -65,7 +65,7 @@ export function SpendingByBranchChart({ data }: SpendingByBranchChartProps) {
                             }}
                         />
                         <Legend wrapperStyle={{ fontSize: 12 }} />
-                        {SERIES.map((s, i) => (
+                        {SERIES.map((s) => (
                             <Bar
                                 key={s.key}
                                 dataKey={s.key}
@@ -73,7 +73,6 @@ export function SpendingByBranchChart({ data }: SpendingByBranchChartProps) {
                                 stackId="zakupy"
                                 fill={s.color}
                                 maxBarSize={32}
-                                radius={i === SERIES.length - 1 ? [0, 8, 8, 0] : 0}
                             />
                         ))}
                     </BarChart>

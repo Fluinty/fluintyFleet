@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
 import { format, startOfMonth, subMonths } from "date-fns"
 import { pl } from "date-fns/locale"
-import { CalendarDays, Building2, ChevronDown } from "lucide-react"
+import { CalendarDays, Building2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
     Select,

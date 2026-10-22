@@ -8,7 +8,7 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table"
-import { formatCurrency, formatDate } from "@/utils/format"
+import { formatCurrency, formatDate, pluralPl } from "@/utils/format"
 import { ItemResolver } from "./ItemResolver"
 import { AlertCircle, Calendar, Receipt, Package, ChevronDown, ChevronUp } from "lucide-react"
 import { useState } from "react"
@@ -84,7 +84,7 @@ function OrderItemsGroup({
                             <span className="text-sm font-medium text-slate-700">{order.intercars_id}</span>
                         </div>
                         <span className="px-2 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-semibold">
-                            {items.length} {items.length === 1 ? 'pozycja' : items.length < 5 ? 'pozycje' : 'pozycji'} do przypisania
+                            {items.length} {pluralPl(items.length, ['pozycja', 'pozycje', 'pozycji'])} do przypisania
                         </span>
                     </div>
                     <div className="flex items-center gap-3">

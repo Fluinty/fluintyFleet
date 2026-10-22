@@ -1,6 +1,6 @@
 import Link from "next/link"
-import { formatCurrency } from "@/utils/format"
-import { Car, ExternalLink } from "lucide-react"
+import { formatCurrency, pluralPl } from "@/utils/format"
+import { ExternalLink } from "lucide-react"
 
 interface TopVehicle {
     id: string
@@ -59,7 +59,7 @@ export function TopVehiclesList({ vehicles }: TopVehiclesListProps) {
                             <p className="text-sm text-slate-500 truncate">
                                 {vehicle.brand} {vehicle.model}
                                 <span className="mx-2">•</span>
-                                {vehicle.order_count} zamówień
+                                {vehicle.order_count} {pluralPl(vehicle.order_count, ['zamówienie', 'zamówienia', 'zamówień'])}
                             </p>
                         </div>
 
