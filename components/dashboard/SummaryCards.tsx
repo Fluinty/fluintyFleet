@@ -4,14 +4,18 @@ import Link from "next/link"
 interface SummaryCardsProps {
     vehicleCount: number
     totalOrdersAmount: number
+    pendingAmount?: number      // część zakupów z tego miesiąca, która czeka na przypisanie do auta
     pendingOrdersCount: number
     activeAlertsCount: number
     isAdmin?: boolean
 }
 
+const pln = (amount: number) => `${amount.toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} zł`
+
 export function SummaryCards({
     vehicleCount,
     totalOrdersAmount,
+    pendingAmount = 0,
     pendingOrdersCount,
     activeAlertsCount,
     isAdmin = true
@@ -28,8 +32,11 @@ export function SummaryCards({
             href: "/vehicles"
         },
         {
-            title: "Zamówienia (Ten Miesiąc)",
-            value: `${totalOrdersAmount.toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} zł`,
+            // Nagłówki wszystkich zamówień z miesiąca, także tych, których pozycje czekają w kolejce.
+            // Ta sama liczba, co „Zakupy razem” w Statystykach.
+            title: "Zakupy (Ten Miesiąc)",
+            value: pln(totalOrdersAmount),
+            subtitle: pendingAmount > 0 ? `w tym ${pln(pendingAmount)} czeka na przypisanie` : undefined,
             icon: TrendingUp,
             gradient: "from-emerald-500 to-teal-500",
             bgGradient: "from-emerald-50 to-teal-50",
@@ -76,7 +83,9 @@ export function SummaryCards({
                                 <p className={`text-3xl font-bold bg-gradient-to-r ${card.gradient} bg-clip-text text-transparent`}>
                                     {card.value}
                                 </p>
-
+                                {card.subtitle && (
+                                    <p className="text-xs text-amber-700">{card.subtitle}</p>
+                                )}
                             </div>
                             <div className={`${card.iconBg} p-3 rounded-xl`}>
                                 <card.icon className={`h-6 w-6 ${card.iconColor}`} />

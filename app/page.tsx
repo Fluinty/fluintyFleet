@@ -127,6 +127,21 @@ export default async function DashboardPage() {
     ?.filter(o => o.order_date >= startOfCurrentMonth)
     .reduce((sum, o) => sum + (o.total_gross || 0), 0) || 0
 
+  // Ile z tegomiesięcznych zakupów czeka jeszcze na przypisanie do auta (bez pozycji magazynowych)
+  const queueItems = await fetchAll(() => {
+    let q = supabase
+      .from('order_items')
+      .select('id, total_gross, orders!inner(order_date, branch_id)')
+      .is('vehicle_id', null)
+      .eq('is_warehouse', false)
+      .gte('orders.order_date', startOfCurrentMonth)
+    if (!isAdmin && userBranchIds.length > 0) {
+      q = q.in('orders.branch_id', userBranchIds)
+    }
+    return q.order('id')
+  })
+  const pendingAmount = queueItems.reduce((sum, i) => sum + (Number(i.total_gross) || 0), 0)
+
   // Calculate Expenses Chart Data (Last 6 months)
   const expensesMap = new Map<string, number>()
   // Initialize last 6 months with 0
@@ -201,6 +216,7 @@ export default async function DashboardPage() {
       <SummaryCards
         vehicleCount={vehicleCount || 0}
         totalOrdersAmount={totalOrdersAmount}
+        pendingAmount={pendingAmount}
         pendingOrdersCount={pendingOrdersCount || 0}
         activeAlertsCount={totalAlertsCount}
         isAdmin={isAdmin}

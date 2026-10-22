@@ -13,6 +13,26 @@ interface PageProps {
     searchParams: Promise<{ month?: string; branch?: string }>
 }
 
+// Etykieta dla zamówień bez kodu oddziału (dziś: faktury ręczne, które dostają tylko branch_id)
+const NO_BRANCH_CODE = 'UNKNOWN'
+const NO_BRANCH_LABEL = 'Bez kodu oddziału'
+
+type OrderRef = { id: string; order_date: string; branch_code: string | null }
+type MonthItem = {
+    id: string
+    total_gross: number | null
+    vehicle_id: string | null
+    is_warehouse: boolean | null
+    orders: OrderRef | OrderRef[]
+}
+type MonthOrder = { id: string; total_gross: number | null; branch_code: string | null }
+
+const gross = (row: { total_gross: number | null } | null | undefined) => Number(row?.total_gross) || 0
+const orderOf = (item: MonthItem): OrderRef | undefined => Array.isArray(item.orders) ? item.orders[0] : item.orders
+// Każda pozycja jest w dokładnie jednym koszyku: przypisana do auta, na magazynie albo w kolejce do weryfikacji
+const bucketOf = (item: MonthItem): 'assigned' | 'warehouse' | 'queue' =>
+    item.vehicle_id ? 'assigned' : item.is_warehouse ? 'warehouse' : 'queue'
+
 export default async function StatisticsPage({ searchParams }: PageProps) {
     const supabase = await createClient()
     const params = await searchParams
@@ -43,8 +63,6 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
     // więc warunek "<= 2026-09-30" znaczył "<= 30.09 00:00" i gubił cały ostatni dzień miesiąca.
     const monthStart = selectedMonth
     const nextMonthStart = format(addMonths(new Date(selectedMonth), 1), 'yyyy-MM-dd')
-
-    // Previous month for comparison
     const prevMonthStart = format(subMonths(new Date(selectedMonth), 1), 'yyyy-MM-dd')
 
     // Fetch branches for filter dropdown
@@ -54,18 +72,31 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
         .eq('is_active', true)
         .order('name')
 
-    // Pozycje z autem w zadanym przedziale dat. Stronicowane (fetchAll), bo miesiąc może mieć
-    // więcej niż 1000 pozycji, a jedno zapytanie zwraca najwyżej tyle.
-    const fetchAssignedItems = (from: string, toExclusive: string) => fetchAll(() => {
+    // Nagłówki zamówień z miesiąca: ta sama miara, co karta „Zakupy (ten miesiąc)” na dashboardzie.
+    // Stronicowane (fetchAll), bo jedno zapytanie zwraca najwyżej 1000 wierszy.
+    const fetchOrders = (from: string, toExclusive: string) => fetchAll<MonthOrder>(() => {
+        let q = supabase
+            .from('orders')
+            .select('id, total_gross, branch_code')
+            .gte('order_date', from)
+            .lt('order_date', toExclusive)
+        if (selectedBranch) {
+            q = q.eq('branch_code', selectedBranch)
+        }
+        return q.order('id')
+    })
+
+    // Wszystkie pozycje z miesiąca, bez względu na to, czy mają auto. Koszyk rozstrzyga bucketOf().
+    const fetchItems = (from: string, toExclusive: string) => fetchAll<MonthItem>(() => {
         let q = supabase
             .from('order_items')
             .select(`
                 id,
                 total_gross,
                 vehicle_id,
+                is_warehouse,
                 orders!inner(id, order_date, branch_code)
             `)
-            .not('vehicle_id', 'is', null)
             .gte('orders.order_date', from)
             .lt('orders.order_date', toExclusive)
         if (selectedBranch) {
@@ -74,64 +105,81 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
         return q.order('id')
     })
 
-    // Current month totals
-    const currentItems = await fetchAssignedItems(monthStart, nextMonthStart)
+    const [currentOrders, currentItems, prevOrders] = await Promise.all([
+        fetchOrders(monthStart, nextMonthStart),
+        fetchItems(monthStart, nextMonthStart),
+        fetchOrders(prevMonthStart, monthStart),
+    ])
 
-    // Previous month totals (for MoM comparison)
-    const prevItems = await fetchAssignedItems(prevMonthStart, monthStart)
+    // Podsumowanie: zakupy razem (nagłówki) = auta + kolejka + magazyn (pozycje)
+    const totalPurchases = currentOrders.reduce((sum, o) => sum + gross(o), 0)
+    const prevPurchases = prevOrders.reduce((sum, o) => sum + gross(o), 0)
 
-    // Calculate summary metrics
-    const totalSpending = currentItems?.reduce((sum, item) => sum + (item.total_gross || 0), 0) || 0
-    const prevSpending = prevItems?.reduce((sum, item) => sum + (item.total_gross || 0), 0) || 0
-    const vehiclesWithOrders = new Set(currentItems?.map(i => i.vehicle_id)).size
-    const totalOrders = new Set(currentItems?.map(i => {
-        const order = Array.isArray(i.orders) ? i.orders[0] : i.orders
-        return order?.id
-    })).size
-    const avgPerVehicle = vehiclesWithOrders > 0 ? totalSpending / vehiclesWithOrders : 0
-    const momChange = prevSpending > 0
-        ? ((totalSpending - prevSpending) / prevSpending) * 100
+    const assignedItems = currentItems.filter(i => bucketOf(i) === 'assigned')
+    const queueItems = currentItems.filter(i => bucketOf(i) === 'queue')
+    const warehouseItems = currentItems.filter(i => bucketOf(i) === 'warehouse')
+
+    const assignedTotal = assignedItems.reduce((sum, i) => sum + gross(i), 0)
+    const queueTotal = queueItems.reduce((sum, i) => sum + gross(i), 0)
+    const warehouseTotal = warehouseItems.reduce((sum, i) => sum + gross(i), 0)
+    // Import zapisuje nagłówek równy sumie pozycji; gdyby kiedyś przestał, różnica ma być widoczna, nie ukryta
+    const headerVsItems = totalPurchases - (assignedTotal + queueTotal + warehouseTotal)
+
+    const vehiclesWithOrders = new Set(assignedItems.map(i => i.vehicle_id)).size
+    const avgPerVehicle = vehiclesWithOrders > 0 ? assignedTotal / vehiclesWithOrders : 0
+    const totalOrders = currentOrders.length
+    const queueOrders = new Set(queueItems.map(i => orderOf(i)?.id)).size
+    const momChange = prevPurchases > 0
+        ? ((totalPurchases - prevPurchases) / prevPurchases) * 100
         : null
 
-    // Calculate branch spending breakdown
-    const branchSpendingMap = new Map<string, { spending: number; vehicles: Set<string>; orders: Set<string> }>()
-
-    currentItems?.forEach(item => {
-        const order = Array.isArray(item.orders) ? item.orders[0] : item.orders
-        const branchCode = order?.branch_code || 'UNKNOWN'
-
-        if (!branchSpendingMap.has(branchCode)) {
-            branchSpendingMap.set(branchCode, { spending: 0, vehicles: new Set(), orders: new Set() })
+    // Oddziały po kodzie z nagłówka zamówienia: zakupy z nagłówków, koszyki z pozycji
+    type BranchAgg = { purchases: number; assigned: number; queue: number; warehouse: number; vehicles: Set<string>; orders: Set<string> }
+    const branchAgg = new Map<string, BranchAgg>()
+    const aggFor = (code: string): BranchAgg => {
+        let entry = branchAgg.get(code)
+        if (!entry) {
+            entry = { purchases: 0, assigned: 0, queue: 0, warehouse: 0, vehicles: new Set(), orders: new Set() }
+            branchAgg.set(code, entry)
         }
-        const entry = branchSpendingMap.get(branchCode)!
-        entry.spending += item.total_gross || 0
-        entry.vehicles.add(item.vehicle_id!)
-        entry.orders.add(order?.id)
+        return entry
+    }
+    currentOrders.forEach(o => {
+        const entry = aggFor(o.branch_code || NO_BRANCH_CODE)
+        entry.purchases += gross(o)
+        entry.orders.add(o.id)
+    })
+    currentItems.forEach(item => {
+        const entry = aggFor(orderOf(item)?.branch_code || NO_BRANCH_CODE)
+        entry[bucketOf(item)] += gross(item)
+        if (item.vehicle_id) entry.vehicles.add(item.vehicle_id)
     })
 
-    const branchCodeToName: Record<string, string> = {}
+    const branchCodeToName: Record<string, string> = { [NO_BRANCH_CODE]: NO_BRANCH_LABEL }
     branches?.forEach(b => { branchCodeToName[b.code] = b.name })
 
-    const spendingByBranch = Array.from(branchSpendingMap.entries())
-        .map(([code, data]) => ({
+    const branchComparison = Array.from(branchAgg.entries())
+        .map(([code, d]) => ({
             branch_code: code,
             branch_name: branchCodeToName[code] || code,
-            spending: data.spending
+            orders: d.orders.size,
+            vehicles: d.vehicles.size,
+            purchases: d.purchases,
+            assigned: d.assigned,
+            queue: d.queue,
+            warehouse: d.warehouse,
         }))
-        .sort((a, b) => b.spending - a.spending)
+        .sort((a, b) => b.purchases - a.purchases)
 
-    const branchComparison = Array.from(branchSpendingMap.entries())
-        .map(([code, data]) => ({
-            branch_code: code,
-            branch_name: branchCodeToName[code] || code,
-            vehicles: data.vehicles.size,
-            orders: data.orders.size,
-            spending: data.spending,
-            avgPerVehicle: data.vehicles.size > 0 ? data.spending / data.vehicles.size : 0
-        }))
-        .sort((a, b) => b.spending - a.spending)
+    const spendingByBranch = branchComparison.map(r => ({
+        branch_code: r.branch_code,
+        branch_name: r.branch_name,
+        assigned: r.assigned,
+        queue: r.queue,
+        warehouse: r.warehouse,
+    }))
 
-    // Top vehicles by spending
+    // Top vehicles by spending (tylko pozycje przypisane do aut)
     const vehicleSpendingMap = new Map<string, {
         id: string
         plate_number: string
@@ -141,17 +189,18 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
         order_count: number
     }>()
 
-    // Fetch vehicle details for items
-    const vehicleIds = [...new Set(currentItems?.map(i => i.vehicle_id).filter(Boolean))]
-    const { data: vehicleDetails } = await supabase
-        .from('vehicles')
-        .select('id, plate_number, brand, model')
-        .in('id', vehicleIds)
+    const vehicleIds = [...new Set(assignedItems.map(i => i.vehicle_id as string))]
+    const { data: vehicleDetails } = vehicleIds.length > 0
+        ? await supabase
+            .from('vehicles')
+            .select('id, plate_number, brand, model')
+            .in('id', vehicleIds)
+        : { data: [] as { id: string; plate_number: string; brand: string | null; model: string | null }[] }
 
     const vehicleMap = new Map(vehicleDetails?.map(v => [v.id, v]))
 
-    currentItems?.forEach(item => {
-        const vehicleId = item.vehicle_id!
+    assignedItems.forEach(item => {
+        const vehicleId = item.vehicle_id as string
         const vehicle = vehicleMap.get(vehicleId)
 
         if (!vehicleSpendingMap.has(vehicleId)) {
@@ -165,7 +214,7 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
             })
         }
         const entry = vehicleSpendingMap.get(vehicleId)!
-        entry.spending += item.total_gross || 0
+        entry.spending += gross(item)
         entry.order_count += 1
     })
 
@@ -191,11 +240,18 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
 
             {/* Summary Cards */}
             <StatsSummaryCards
-                totalSpending={totalSpending}
-                avgPerVehicle={avgPerVehicle}
-                momChange={momChange}
+                totalPurchases={totalPurchases}
                 totalOrders={totalOrders}
+                momChange={momChange}
+                assignedTotal={assignedTotal}
                 vehiclesWithOrders={vehiclesWithOrders}
+                avgPerVehicle={avgPerVehicle}
+                queueTotal={queueTotal}
+                queueItems={queueItems.length}
+                queueOrders={queueOrders}
+                warehouseTotal={warehouseTotal}
+                warehouseItems={warehouseItems.length}
+                headerVsItems={headerVsItems}
             />
 
             {/* Charts Row */}
