@@ -13,7 +13,8 @@ import {
     DialogTrigger,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { resolvePendingItem, resolvePendingItemToWarehouse, resolvePendingOrderItems } from "@/app/actions/resolve-pending-item"
+import { resolvePendingItem, resolvePendingItemToWarehouse, resolvePendingOrderItems, resolvePendingOrderItemsToWarehouse } from "@/app/actions/resolve-pending-item"
+import { pluralPl } from "@/utils/format"
 import { useToast } from "@/components/ui/use-toast"
 import { Loader2, Car, Package, Warehouse } from "lucide-react"
 import { isWarehouseEligible, WAREHOUSE_LABEL } from "@/lib/warehouse"
@@ -69,8 +70,9 @@ export function ItemResolver({
 
     const hasMultipleItems = allItems.length > 1
     const isEditMode = !!currentPlate || isWarehouse
-    // Tylko olej silnikowy i AdBlue mogą iść na magazyn (lista w lib/warehouse.ts)
+    // Na magazyn idą tylko produkty z listy w lib/warehouse.ts (olej silnikowy, AdBlue, opony)
     const warehouseEligible = isWarehouseEligible(itemName)
+    const eligibleInOrder = allItems.filter(i => isWarehouseEligible(i.name)).length
     const currentLabel = isWarehouse ? WAREHOUSE_LABEL : currentPlate
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -117,7 +119,10 @@ export function ItemResolver({
         setLoading(true)
         setError("")
         try {
-            const result = await resolvePendingItemToWarehouse(itemId)
+            const bulk = applyToAll && hasMultipleItems
+            const result = bulk
+                ? await resolvePendingOrderItemsToWarehouse(orderId)
+                : await resolvePendingItemToWarehouse(itemId)
             if ("error" in result && result.error) {
                 setError(result.error)
             } else {
@@ -125,13 +130,19 @@ export function ItemResolver({
                 setPlate("")
                 setApplyToAll(false)
                 const warning = "warning" in result ? result.warning : undefined
+                const updated = "updated" in result ? result.updated : 0
+                const skipped = "skipped" in result ? result.skipped : 0
+                const bulkText = `Przypisano na magazyn ${updated} ${pluralPl(updated, ['pozycję', 'pozycje', 'pozycji'])}`
+                    + (skipped > 0 ? `, ${skipped} ${pluralPl(skipped, ['pozycja została', 'pozycje zostały', 'pozycji zostało'])} w kolejce (nie z listy magazynowej).` : '.')
                 toast({
                     title: warning ? "Uwaga" : "Sukces",
                     description: warning
                         ? warning
-                        : isEditMode
-                            ? "Pozycja została przeniesiona na magazyn."
-                            : "Pozycja została przypisana na magazyn.",
+                        : bulk
+                            ? bulkText
+                            : isEditMode
+                                ? "Pozycja została przeniesiona na magazyn."
+                                : "Pozycja została przypisana na magazyn.",
                     variant: warning ? "destructive" : undefined,
                 })
                 router.refresh()
@@ -143,11 +154,16 @@ export function ItemResolver({
         }
     }
 
-    // Magazyn zawsze dotyczy jednej pozycji — przy "zastosuj do wszystkich" przycisk znika
-    const warehouseButton = warehouseEligible && !isWarehouse && !(applyToAll && hasMultipleItems) ? (
+    // Pojedyncza pozycja: przycisk tylko dla produktów z listy magazynowej.
+    // "Zastosuj do wszystkich": przycisk dla całego zamówienia, gdy choć jedna otwarta pozycja się kwalifikuje.
+    const bulkMode = applyToAll && hasMultipleItems
+    const showWarehouseButton = !isWarehouse && (bulkMode ? eligibleInOrder > 0 : warehouseEligible)
+    const warehouseButton = showWarehouseButton ? (
         <Button type="button" variant="outline" disabled={loading} onClick={handleWarehouse}>
             <Warehouse className="h-4 w-4 mr-1" />
-            {isEditMode ? "Przenieś na magazyn" : "Na magazyn"}
+            {bulkMode
+                ? `Na magazyn (${eligibleInOrder} z ${allItems.length})`
+                : isEditMode ? "Przenieś na magazyn" : "Na magazyn"}
         </Button>
     ) : null
 

@@ -143,6 +143,64 @@ export async function resolvePendingItemToWarehouse(itemId: string) {
 }
 
 /**
+ * Put every open item of an order on the warehouse, as long as its name qualifies (lib/warehouse.ts).
+ * Items that do not qualify stay in the queue and are reported back as skipped.
+ * Built for orders like 200 tyres from the InterCars tyre warehouse (HWR): one click instead of 200.
+ */
+export async function resolvePendingOrderItemsToWarehouse(orderId: string) {
+    const supabase = await createClient()
+
+    const { data: openItems, error: iError } = await supabase
+        .from("order_items")
+        .select("id, name")
+        .eq("order_id", orderId)
+        .is("vehicle_id", null)
+        .eq("is_warehouse", false)
+
+    if (iError || !openItems) {
+        return { error: "Błąd podczas pobierania pozycji zamówienia." }
+    }
+
+    const eligibleIds = openItems.filter(i => isWarehouseEligible(i.name)).map(i => i.id)
+    const skipped = openItems.length - eligibleIds.length
+
+    if (eligibleIds.length === 0) {
+        return { error: "Żadnej z otwartych pozycji tego zamówienia nie można przypisać na magazyn." }
+    }
+
+    // Paczkami po 100 id, żeby adres zapytania do PostgREST nie urósł ponad limit
+    let updated = 0
+    for (let i = 0; i < eligibleIds.length; i += 100) {
+        const chunk = eligibleIds.slice(i, i + 100)
+        const { data, error: uError } = await supabase
+            .from("order_items")
+            .update({
+                vehicle_id: null,
+                is_warehouse: true,
+                resolved: true,
+                resolved_at: new Date().toISOString(),
+                resolved_by: "user",
+            })
+            .in("id", chunk)
+            .select("id")
+        if (uError) {
+            return { error: `Błąd podczas przypisywania na magazyn (zapisano ${updated} z ${eligibleIds.length}).` }
+        }
+        updated += data?.length ?? 0
+    }
+
+    const closed = await completeOrderIfResolved(supabase, orderId)
+
+    revalidateAfterResolve()
+    return {
+        success: true,
+        updated,
+        skipped,
+        warning: closed ? undefined : "Pozycje są na magazynie, ale zamówienia nie udało się domknąć.",
+    }
+}
+
+/**
  * Resolve all items in an order at once with the same vehicle.
  * Items already put on the warehouse are left alone — that was a deliberate decision.
  */
