@@ -37,6 +37,7 @@ interface PendingItem {
     name: string | null
     sku: string | null
     total_gross: number | null
+    assigned?: boolean   // pozycja ma już auto (lista z /orders); akcja zbiorcza „na magazyn” bierze tylko otwarte
 }
 
 interface ItemResolverProps {
@@ -72,7 +73,9 @@ export function ItemResolver({
     const isEditMode = !!currentPlate || isWarehouse
     // Na magazyn idą tylko produkty z listy w lib/warehouse.ts (olej silnikowy, AdBlue, opony)
     const warehouseEligible = isWarehouseEligible(itemName)
-    const eligibleInOrder = allItems.filter(i => isWarehouseEligible(i.name)).length
+    // Zbiorczo na magazyn idą tylko pozycje bez auta; lista z /orders zawiera też przypisane, więc je odsiewamy
+    const openInOrder = allItems.filter(i => !i.assigned)
+    const eligibleInOrder = openInOrder.filter(i => isWarehouseEligible(i.name)).length
     const currentLabel = isWarehouse ? WAREHOUSE_LABEL : currentPlate
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -125,6 +128,8 @@ export function ItemResolver({
                 : await resolvePendingItemToWarehouse(itemId)
             if ("error" in result && result.error) {
                 setError(result.error)
+                // Część paczek mogła już wejść; lista za oknem ma pokazać prawdę
+                if ("partial" in result && result.partial) router.refresh()
             } else {
                 setOpen(false)
                 setPlate("")
@@ -134,15 +139,13 @@ export function ItemResolver({
                 const skipped = "skipped" in result ? result.skipped : 0
                 const bulkText = `Przypisano na magazyn ${updated} ${pluralPl(updated, ['pozycję', 'pozycje', 'pozycji'])}`
                     + (skipped > 0 ? `, ${skipped} ${pluralPl(skipped, ['pozycja została', 'pozycje zostały', 'pozycji zostało'])} w kolejce (nie z listy magazynowej).` : '.')
+                const singleText = isEditMode
+                    ? "Pozycja została przeniesiona na magazyn."
+                    : "Pozycja została przypisana na magazyn."
+                const baseText = bulk ? bulkText : singleText
                 toast({
                     title: warning ? "Uwaga" : "Sukces",
-                    description: warning
-                        ? warning
-                        : bulk
-                            ? bulkText
-                            : isEditMode
-                                ? "Pozycja została przeniesiona na magazyn."
-                                : "Pozycja została przypisana na magazyn.",
+                    description: warning ? `${baseText} ${warning}` : baseText,
                     variant: warning ? "destructive" : undefined,
                 })
                 router.refresh()
@@ -162,7 +165,7 @@ export function ItemResolver({
         <Button type="button" variant="outline" disabled={loading} onClick={handleWarehouse}>
             <Warehouse className="h-4 w-4 mr-1" />
             {bulkMode
-                ? `Na magazyn (${eligibleInOrder} z ${allItems.length})`
+                ? `Na magazyn (${eligibleInOrder} z ${openInOrder.length} ${pluralPl(openInOrder.length, ['otwartej', 'otwartych', 'otwartych'])})`
                 : isEditMode ? "Przenieś na magazyn" : "Na magazyn"}
         </Button>
     ) : null

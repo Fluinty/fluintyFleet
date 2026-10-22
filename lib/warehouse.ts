@@ -21,9 +21,13 @@ const NOT_MOTOR_OIL = /przek[łl]adn|hydraul|skrzyn|wspomag|\batf\b|\bgl-?[45]\b
 const ADBLUE = /\bad\s*-?\s*blue|\badblu/i
 const NOT_ADBLUE = /czujnik|pompa|wtrysk|zbiornik|grza[łl]k|przew[óo]d|modu[łl]|dozuj|zaw[óo]r|filtr|sond|sterownik|\bnox\b/i
 
-// "Opona zimowa dostawcza", "OPONY LETNIE", "opon 235/65R16"; nie łapie "czujnik ciśnienia opon" ani "zestaw naprawczy opon"
-const TIRE = /\bopon(?:a|y|ę|ą|ami|ach|om|ie)?\b/i
-const NOT_TIRE = /czujnik|ci[śs]nieni|naprawcz|\bklej|uszczelniacz|kompresor|[łl]atk|wentyl|d[ęe]tk|[łl]a[ńn]cuch|pokrowiec|worek|torb|wa[żz]ark|wywa[żz]|\bwag[aąęi]\b|monta[żz]|maszyn|stojak|wieszak/i
+// Nazwa produktu zaczyna się od "Opona …"/"Opony …" (tak nazywa je InterCars: "Opona zimowa dostawcza"),
+// a usługi z faktur warsztatowych nigdy ("łatanie opony", "wymiana opon") — stąd kotwica na początku nazwy.
+// Bez końcówek "ę/ą": \b w JS nie widzi granicy po polskim znaku, więc "oponę" i tak łapie się jako "opon".
+const TIRE = /^\s*opon(?:a|y|ami|ach|om|ie)?\b/i
+// Usługi i akcesoria do opon zostają przy aucie: wymiana, łatanie, naprawa, wulkanizacja, przechowywanie,
+// czujniki ciśnienia, zestawy naprawcze, łańcuchy, pokrowce, wyważanie.
+const NOT_TIRE = /wymian|[łl]atani|naprawa|naprawcz|wulkaniz|serwis|przechow|utyliz|hotel|czujnik|ci[śs]nieni|\bklej|uszczelniacz|kompresor|[łl]atk|wentyl|d[ęe]tk|[łl]a[ńn]cuch|pokrowiec|worek|torb|wa[żz]ark|wywa[żz]|\bwag[aąęi]|monta[żz]|maszyn|stojak|wieszak/i
 
 export const WAREHOUSE_PRODUCT_RULES: WarehouseProductRule[] = [
     {

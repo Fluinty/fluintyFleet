@@ -4,7 +4,9 @@ import { createClient } from "@/utils/supabase/server"
 import { revalidatePath } from "next/cache"
 
 import { checkBudgetAlerts } from "./check-budget"
-import { isWarehouseEligible } from "@/lib/warehouse"
+import { isWarehouseEligible, WAREHOUSE_PRODUCT_RULES } from "@/lib/warehouse"
+
+const WAREHOUSE_PRODUCTS_LABEL = WAREHOUSE_PRODUCT_RULES.map(r => r.label).join(", ")
 
 type Supabase = Awaited<ReturnType<typeof createClient>>
 
@@ -112,7 +114,7 @@ export async function resolvePendingItemToWarehouse(itemId: string) {
     }
 
     if (!isWarehouseEligible(item.name)) {
-        return { error: "Tej pozycji nie można przypisać na magazyn. Na magazyn idą tylko olej silnikowy i AdBlue." }
+        return { error: `Tej pozycji nie można przypisać na magazyn. Na magazyn idą tylko: ${WAREHOUSE_PRODUCTS_LABEL}.` }
     }
 
     const { data: updated, error: uError } = await supabase
@@ -165,7 +167,7 @@ export async function resolvePendingOrderItemsToWarehouse(orderId: string) {
     const skipped = openItems.length - eligibleIds.length
 
     if (eligibleIds.length === 0) {
-        return { error: "Żadnej z otwartych pozycji tego zamówienia nie można przypisać na magazyn." }
+        return { error: `Żadnej z otwartych pozycji tego zamówienia nie można przypisać na magazyn (idą tam tylko: ${WAREHOUSE_PRODUCTS_LABEL}).` }
     }
 
     // Paczkami po 100 id, żeby adres zapytania do PostgREST nie urósł ponad limit
@@ -184,9 +186,15 @@ export async function resolvePendingOrderItemsToWarehouse(orderId: string) {
             .in("id", chunk)
             .select("id")
         if (uError) {
-            return { error: `Błąd podczas przypisywania na magazyn (zapisano ${updated} z ${eligibleIds.length}).` }
+            // Poprzednie paczki już są na magazynie — lista ma to pokazać, a nie udawać, że nic się nie stało
+            if (updated > 0) revalidateAfterResolve()
+            return { error: `Błąd podczas przypisywania na magazyn (zapisano ${updated} z ${eligibleIds.length}).`, partial: updated > 0 }
         }
         updated += data?.length ?? 0
+    }
+
+    if (updated === 0) {
+        return { error: "Żadna pozycja nie została przypisana. Ktoś mógł je rozliczyć w międzyczasie, odśwież stronę." }
     }
 
     const closed = await completeOrderIfResolved(supabase, orderId)
