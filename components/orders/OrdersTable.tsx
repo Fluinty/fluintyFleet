@@ -11,7 +11,7 @@ import {
 import { formatCurrency, formatDate } from "@/utils/format"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ChevronDown, ChevronUp, ArrowUpDown, ShoppingCart, Calendar, CheckCircle2, Clock, Car } from "lucide-react"
+import { ChevronDown, ChevronUp, ArrowUpDown, ShoppingCart, Calendar, CheckCircle2, Clock, Ban } from "lucide-react"
 import { useState, Fragment } from "react"
 import { cn } from "@/lib/utils"
 import { useRouter, useSearchParams } from "next/navigation"
@@ -43,6 +43,33 @@ interface Order {
     branch_code: string | null
     branches?: { name: string } | { name: string }[] | null
     order_items?: OrderItem[]
+}
+
+// Status zamówienia: completed = wszystkie pozycje rozliczone, pending = coś czeka w kolejce,
+// void = nieaktualne (InterCars wydał zamówienie pod nowym numerem albo je anulował; nie liczy się nigdzie)
+function StatusBadge({ status }: { status: string }) {
+    if (status === 'completed') {
+        return (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold">
+                <CheckCircle2 className="h-3 w-3" />
+                Przypisane
+            </span>
+        )
+    }
+    if (status === 'void') {
+        return (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-slate-200 text-slate-600 text-xs font-semibold" title="InterCars nie zwraca już tego numeru: wydane pod nowym numerem albo anulowane">
+                <Ban className="h-3 w-3" />
+                Nieaktualne
+            </span>
+        )
+    }
+    return (
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-semibold">
+            <Clock className="h-3 w-3" />
+            Do przypisania
+        </span>
+    )
 }
 
 export function OrdersTable({ orders, vehicles }: { orders: Order[]; vehicles: VehicleOption[] }) {
@@ -113,17 +140,7 @@ export function OrdersTable({ orders, vehicles }: { orders: Order[]; vehicles: V
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        {order.status === 'completed' ? (
-                                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold">
-                                                <CheckCircle2 className="h-3 w-3" />
-                                                Przypisane
-                                            </span>
-                                        ) : (
-                                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-semibold">
-                                                <Clock className="h-3 w-3" />
-                                                Do przypisania
-                                            </span>
-                                        )}
+                                        <StatusBadge status={order.status} />
                                         {isExpanded ? <ChevronUp className="h-5 w-5 text-slate-400" /> : <ChevronDown className="h-5 w-5 text-slate-400" />}
                                     </div>
                                 </div>
@@ -231,17 +248,7 @@ export function OrdersTable({ orders, vehicles }: { orders: Order[]; vehicles: V
                                         <TableCell>{branchName || "-"}</TableCell>
                                         <TableCell className="max-w-[200px] truncate" title={order.description || ""}>{order.description || "-"}</TableCell>
                                         <TableCell>
-                                            {order.status === 'completed' ? (
-                                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold">
-                                                    <CheckCircle2 className="h-3 w-3" />
-                                                    Przypisane
-                                                </span>
-                                            ) : (
-                                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-semibold">
-                                                    <Clock className="h-3 w-3" />
-                                                    Do przypisania
-                                                </span>
-                                            )}
+                                            <StatusBadge status={order.status} />
                                         </TableCell>
                                         <TableCell className="text-right font-medium">{formatCurrency(order.total_gross)}</TableCell>
                                     </TableRow>

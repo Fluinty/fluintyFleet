@@ -68,6 +68,7 @@ export default async function VehicleDetailsPage({ params }: PageProps) {
             )
         `)
         .eq('vehicle_id', id)
+        .neq('orders.status', 'void')
         .order('created_at', { ascending: false })
         .order('id'))
 

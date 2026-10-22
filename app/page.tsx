@@ -92,11 +92,13 @@ export default async function DashboardPage() {
   const startOfCurrentMonth = format(startOfMonth(new Date()), 'yyyy-MM-dd')
 
   // Stronicowane (fetchAll): 6 miesięcy zamówień to więcej niż 1000 wierszy, które daje jedno zapytanie
+  // Zamówienia ze statusem 'void' (nieaktualne: InterCars wydał je pod nowym numerem albo anulował) nie liczą się nigdzie
   const orders = await fetchAll(() => {
     let q = supabase
       .from('orders')
       .select('total_gross, order_date, branch_code, branch_id, branches(name)')
       .gte('order_date', sixMonthsAgo)
+      .neq('status', 'void')
     if (!isAdmin && userBranchIds.length > 0) {
       q = q.in('branch_id', userBranchIds)
     }
@@ -116,6 +118,7 @@ export default async function DashboardPage() {
       `)
       .not('vehicle_id', 'is', null)
       .gte('orders.order_date', startOfCurrentMonth)
+      .neq('orders.status', 'void')
     if (!isAdmin && userBranchIds.length > 0) {
       q = q.in('orders.branch_id', userBranchIds)
     }
@@ -135,6 +138,7 @@ export default async function DashboardPage() {
       .is('vehicle_id', null)
       .eq('is_warehouse', false)
       .gte('orders.order_date', startOfCurrentMonth)
+      .neq('orders.status', 'void')
     if (!isAdmin && userBranchIds.length > 0) {
       q = q.in('orders.branch_id', userBranchIds)
     }

@@ -99,6 +99,7 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
             .select('id, total_gross, branch_code, branch_id')
             .gte('order_date', from)
             .lt('order_date', toExclusive)
+            .neq('status', 'void')
         if (branchFilter) {
             q = q.or(branchFilter)
         }
@@ -118,6 +119,7 @@ export default async function StatisticsPage({ searchParams }: PageProps) {
             `)
             .gte('orders.order_date', from)
             .lt('orders.order_date', toExclusive)
+            .neq('orders.status', 'void')
         if (branchFilter) {
             q = q.or(branchFilter, { referencedTable: 'orders' })
         }

@@ -34,7 +34,8 @@ export default async function OrdersPage({
     const params = await searchParams;
     const search = (typeof params.search === 'string' ? params.search : '').replace(/[,()"\\]/g, '').trim()
     const branch = typeof params.branch === 'string' ? params.branch : ''
-    const status = typeof params.status === 'string' && ['completed', 'pending'].includes(params.status) ? params.status : 'ALL'
+    // 'void' = nieaktualne (InterCars wydał zamówienie pod nowym numerem albo je anulował); domyślnie ukryte
+    const status = typeof params.status === 'string' && ['completed', 'pending', 'void'].includes(params.status) ? params.status : 'ALL'
     const isIsoDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
     const dateFrom = isIsoDate(params.dateFrom) ? params.dateFrom : ''
     const dateTo = isIsoDate(params.dateTo) ? params.dateTo : ''
@@ -74,6 +75,8 @@ export default async function OrdersPage({
 
     if (status !== 'ALL') {
         query = query.eq('status', status)
+    } else {
+        query = query.neq('status', 'void')
     }
 
     if (dateFrom) {

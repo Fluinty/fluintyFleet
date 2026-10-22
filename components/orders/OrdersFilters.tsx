@@ -103,6 +103,7 @@ export function OrdersFilters({ branches, showBranchFilter = true }: OrdersFilte
                         <SelectItem value="ALL">Wszystkie</SelectItem>
                         <SelectItem value="completed">Przypisane</SelectItem>
                         <SelectItem value="pending">Do przypisania</SelectItem>
+                        <SelectItem value="void">Nieaktualne</SelectItem>
                     </SelectContent>
                 </Select>
             </div>
