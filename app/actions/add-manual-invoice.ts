@@ -1,39 +1,26 @@
 "use server"
 
-import { createClient } from "@/utils/supabase/server"
 import { createServiceClient } from "@/utils/supabase/service"
 import { revalidatePath } from "next/cache"
 import { checkBudgetAlerts } from "./check-budget"
+import { calculateInvoiceItem, invoiceTotalError, isWarehouseTarget, itemError, summarizeTargets, targetError, type ManualInvoiceInput } from "@/lib/manual-invoice"
 
-interface InvoiceItem {
-    name: string
-    sku?: string
-    quantity: number
-    unitPriceNet: number
-    vatRate: number
-}
-
-interface InvoiceData {
-    orderDate: string
-    supplier: string
-    invoiceNumber: string
-    items: InvoiceItem[]
-}
-
-export async function addManualInvoice(vehicleId: string, data: InvoiceData) {
+// Faktura ręczna wpisywana z karty auta. Od 22.10.2026 każda pozycja ma własny cel: to auto, inne auto
+// z listy albo magazyn (tylko olej silnikowy, AdBlue, opony). Nagłówek dostaje oddział auta, z którego
+// otwarto formularz. Wcześniej wszystkie pozycje szły na to jedno auto, więc fakturę na kilka aut
+// trzeba było wpisywać kilka razy, a oleju nie dało się odłożyć na magazyn.
+export async function addManualInvoice(vehicleId: string, data: ManualInvoiceInput) {
     try {
-        const supabaseAuth = await createClient()
-        const supabase = createServiceClient() // Use service role to bypass RLS
+        const supabase = createServiceClient() // klucz serwisowy: faktury ręczne omijają RLS
 
-        // 1. Validate minimum requirements
         if (!data.items || data.items.length === 0) {
             return { error: "Faktura musi zawierać co najmniej jedną pozycję." }
         }
 
-        // 2. Get vehicle and its branch
+        // 1. Auto, z którego otwarto formularz: daje oddział nagłówkowi
         const { data: vehicle, error: vError } = await supabase
             .from("vehicles")
-            .select("branch_id")
+            .select("id, branch_id")
             .eq("id", vehicleId)
             .single()
 
@@ -41,28 +28,39 @@ export async function addManualInvoice(vehicleId: string, data: InvoiceData) {
             return { error: "Nie znaleziono pojazdu." }
         }
 
-        // 3. Calculate totals for each item and invoice
-        const calculatedItems = data.items.map(item => {
-            const unitPriceGross = item.unitPriceNet * (1 + item.vatRate / 100)
-            const totalNet = item.unitPriceNet * item.quantity
-            const totalGross = unitPriceGross * item.quantity
-
-            return {
-                name: item.name,
-                sku: item.sku || null,
-                required_quantity: item.quantity,
-                unit_price_net: item.unitPriceNet,
-                unit_price_gross: Math.round(unitPriceGross * 100) / 100,
-                total_net: Math.round(totalNet * 100) / 100,
-                total_gross: Math.round(totalGross * 100) / 100,
+        // 2. Pozycje (nazwa, ilość, cena, VAT) i ich cele: auta muszą istnieć i być aktywne,
+        //    magazyn tylko dla produktów z listy. Wszystko sprawdzone, zanim cokolwiek zapiszemy.
+        const items = data.items.map(item => ({ ...item, target: item.target || vehicleId }))
+        for (const item of items) {
+            const problem = itemError(item)
+            if (problem) return { error: problem }
+        }
+        const wantedVehicleIds = Array.from(new Set(items.filter(i => !isWarehouseTarget(i.target)).map(i => i.target)))
+        const allowedVehicleIds = new Set<string>([vehicleId])
+        if (wantedVehicleIds.length > 0) {
+            const { data: vehicles, error: vehiclesError } = await supabase
+                .from("vehicles")
+                .select("id")
+                .in("id", wantedVehicleIds)
+                .eq("is_active", true)
+            if (vehiclesError) {
+                return { error: `Nie udało się sprawdzić pojazdów: ${vehiclesError.message}` }
             }
-        })
+            for (const v of vehicles || []) allowedVehicleIds.add(v.id)
+        }
+        for (const item of items) {
+            const problem = targetError(item, allowedVehicleIds)
+            if (problem) return { error: problem }
+        }
 
+        // 3. Kwoty
+        const calculatedItems = items.map(calculateInvoiceItem)
         const invoiceTotalNet = calculatedItems.reduce((sum, item) => sum + item.total_net, 0)
         const invoiceTotalGross = calculatedItems.reduce((sum, item) => sum + item.total_gross, 0)
+        const totalProblem = invoiceTotalError(invoiceTotalGross)
+        if (totalProblem) return { error: totalProblem }
 
-        // 4. Create order (invoice header)
-        // Generate unique ID for manual invoice (intercars_id has UNIQUE constraint)
+        // 4. Nagłówek (intercars_id ma UNIQUE, więc własny identyfikator)
         const manualInvoiceId = `MANUAL-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 
         const { data: order, error: orderError } = await supabase
@@ -88,13 +86,15 @@ export async function addManualInvoice(vehicleId: string, data: InvoiceData) {
             return { error: `Błąd podczas tworzenia faktury: ${orderError?.message}` }
         }
 
-        // 5. Create order items
-        const orderItems = calculatedItems.map(item => ({
+        // 5. Pozycje: auto albo magazyn (CHECK w bazie: magazyn wyklucza auto)
+        const now = new Date().toISOString()
+        const orderItems = calculatedItems.map((item, i) => ({
             ...item,
             order_id: order.id,
-            vehicle_id: vehicleId,
+            vehicle_id: isWarehouseTarget(items[i].target) ? null : items[i].target,
+            is_warehouse: isWarehouseTarget(items[i].target),
             resolved: true,
-            resolved_at: new Date().toISOString(),
+            resolved_at: now,
             resolved_by: "user",
         }))
 
@@ -104,27 +104,27 @@ export async function addManualInvoice(vehicleId: string, data: InvoiceData) {
 
         if (itemsError) {
             console.error("Error creating order items:", itemsError)
-            // Try to clean up the order
             await supabase.from("orders").delete().eq("id", order.id)
             return { error: `Błąd podczas dodawania pozycji: ${itemsError?.message}` }
         }
 
-        // 6. Trigger budget alert check
+        // 6. Alerty budżetowe (trigger w bazie robi to samo; zostaje do czasu porządków)
         try {
             await checkBudgetAlerts()
         } catch (alertErr) {
             console.error("Budget alert error:", alertErr)
-            // don't fail the whole invoice creation if just the alert fails
         }
 
-        // 7. Revalidate relevant paths
-        revalidatePath(`/vehicles/${vehicleId}`)
+        // 7. Odświeżenie stron, które to czytają
+        const touchedVehicles = new Set<string>([vehicleId, ...wantedVehicleIds])
+        for (const id of touchedVehicles) revalidatePath(`/vehicles/${id}`)
         revalidatePath("/orders")
+        revalidatePath("/statistics")
         revalidatePath("/")
 
-        return { success: true, orderId: order.id }
-    } catch (e: any) {
+        return { success: true, orderId: order.id, summary: summarizeTargets(items, vehicleId) }
+    } catch (e) {
         console.error("Unhandled error in addManualInvoice:", e)
-        return { error: `Błąd krytyczny serwera: ${e?.message || e}` }
+        return { error: `Błąd krytyczny serwera: ${e instanceof Error ? e.message : String(e)}` }
     }
 }

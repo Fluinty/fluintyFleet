@@ -4,9 +4,8 @@ import { createClient } from "@/utils/supabase/server"
 import { revalidatePath } from "next/cache"
 
 import { checkBudgetAlerts } from "./check-budget"
-import { isWarehouseEligible, WAREHOUSE_PRODUCT_RULES } from "@/lib/warehouse"
+import { isWarehouseEligible, WAREHOUSE_PRODUCTS_LABEL } from "@/lib/warehouse"
 
-const WAREHOUSE_PRODUCTS_LABEL = WAREHOUSE_PRODUCT_RULES.map(r => r.label).join(", ")
 
 type Supabase = Awaited<ReturnType<typeof createClient>>
 

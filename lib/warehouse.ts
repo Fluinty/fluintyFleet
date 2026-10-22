@@ -44,6 +44,9 @@ export const WAREHOUSE_PRODUCT_RULES: WarehouseProductRule[] = [
     },
 ]
 
+// "olej silnikowy, AdBlue, opony" – do komunikatów
+export const WAREHOUSE_PRODUCTS_LABEL = WAREHOUSE_PRODUCT_RULES.map((r) => r.label).join(", ")
+
 export function warehouseRuleFor(name: string | null | undefined): WarehouseProductRule | null {
     if (!name) return null
     return WAREHOUSE_PRODUCT_RULES.find((rule) => rule.matches(name)) ?? null

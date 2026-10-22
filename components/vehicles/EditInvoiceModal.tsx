@@ -24,49 +24,24 @@ import {
 import { useToast } from "@/components/ui/use-toast"
 import { Loader2, Plus, Trash2, FileText } from "lucide-react"
 import { editManualInvoice } from "@/app/actions/edit-manual-invoice"
-import { format } from "date-fns"
+import { InvoiceTargetSelect, type InvoiceVehicleOption } from "./InvoiceTargetSelect"
+import { describeInvoiceSummary, isWarehouseTarget, VAT_RATE_OPTIONS, WAREHOUSE_TARGET, type ManualInvoiceInput } from "@/lib/manual-invoice"
+import { isWarehouseEligible, WAREHOUSE_PRODUCTS_LABEL } from "@/lib/warehouse"
 
-interface InvoiceFormData {
-    orderDate: string
-    supplier: string
-    invoiceNumber: string
-    items: Array<{
-        name: string
-        sku: string
-        quantity: number
-        unitPriceNet: number
-        vatRate: number
-    }>
-}
+type InvoiceFormData = ManualInvoiceInput
 
 interface EditInvoiceModalProps {
     orderId: string
     vehicleId: string
+    vehiclePlate: string
+    vehicles: InvoiceVehicleOption[]
     open: boolean
     onOpenChange: (open: boolean) => void
-    initialData: {
-        orderDate: string
-        supplier: string
-        invoiceNumber: string
-        items: Array<{
-            name: string
-            sku: string
-            quantity: number
-            unitPriceNet: number
-            vatRate: number
-        }>
-    }
+    // Komplet pozycji faktury z ich celami (getManualInvoice), nie tylko pozycje tego auta
+    initialData: ManualInvoiceInput
 }
 
-const VAT_RATES = [
-    { label: "23%", value: 23 },
-    { label: "8%", value: 8 },
-    { label: "5%", value: 5 },
-    { label: "0%", value: 0 },
-    { label: "zw.", value: 0 },
-]
-
-export function EditInvoiceModal({ orderId, vehicleId, open, onOpenChange, initialData }: EditInvoiceModalProps) {
+export function EditInvoiceModal({ orderId, vehicleId, vehiclePlate, vehicles, open, onOpenChange, initialData }: EditInvoiceModalProps) {
     const router = useRouter()
     const [loading, setLoading] = useState(false)
     const { toast } = useToast()
@@ -123,6 +98,15 @@ export function EditInvoiceModal({ orderId, vehicleId, open, onOpenChange, initi
     const invoiceTotals = calculateInvoiceTotals()
 
     const onSubmit = async (data: InvoiceFormData) => {
+        const badWarehouse = data.items.find(i => isWarehouseTarget(i.target) && !isWarehouseEligible(i.name))
+        if (badWarehouse) {
+            toast({
+                title: "Pozycja nie może iść na magazyn",
+                description: `„${badWarehouse.name}”: na magazyn idą tylko ${WAREHOUSE_PRODUCTS_LABEL}. Wybierz auto albo popraw nazwę.`,
+                variant: "destructive",
+            })
+            return
+        }
         setLoading(true)
 
         try {
@@ -136,13 +120,13 @@ export function EditInvoiceModal({ orderId, vehicleId, open, onOpenChange, initi
                 })
             } else {
                 toast({
-                    title: "Sukces",
-                    description: "Faktura została zaktualizowana.",
+                    title: "Faktura zaktualizowana",
+                    description: result.summary ? describeInvoiceSummary(result.summary, vehiclePlate) : "Faktura została zaktualizowana.",
                 })
                 onOpenChange(false)
                 router.refresh()
             }
-        } catch (error) {
+        } catch {
             toast({
                 title: "Błąd",
                 description: "Wystąpił nieoczekiwany błąd.",
@@ -162,7 +146,7 @@ export function EditInvoiceModal({ orderId, vehicleId, open, onOpenChange, initi
                         Edytuj fakturę - {initialData.invoiceNumber}
                     </DialogTitle>
                     <DialogDescription>
-                        Edytuj dane faktury i jej pozycje
+                        To wszystkie pozycje tej faktury, także te z innych aut i z magazynu. Po zapisie faktura będzie wyglądać dokładnie tak jak tutaj.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -222,6 +206,7 @@ export function EditInvoiceModal({ orderId, vehicleId, open, onOpenChange, initi
                                         quantity: 1,
                                         unitPriceNet: 0,
                                         vatRate: 23,
+                                        target: vehicleId,
                                     })
                                 }
                             >
@@ -233,10 +218,8 @@ export function EditInvoiceModal({ orderId, vehicleId, open, onOpenChange, initi
                         {fields.map((field: { id: string }, index: number) => {
                             const totals = calculateItemTotals(index)
                             return (
-                                <div
-                                    key={field.id}
-                                    className="grid grid-cols-12 gap-2 items-start p-3 border rounded-lg bg-gray-50"
-                                >
+                                <div key={field.id} className="p-3 border rounded-lg bg-gray-50 space-y-2">
+                                <div className="grid grid-cols-12 gap-2 items-start">
                                     <div className="col-span-3">
                                         <Label className="text-xs">Nazwa *</Label>
                                         <Input
@@ -293,7 +276,7 @@ export function EditInvoiceModal({ orderId, vehicleId, open, onOpenChange, initi
                                                 <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                {VAT_RATES.map((rate) => (
+                                                {VAT_RATE_OPTIONS.map((rate) => (
                                                     <SelectItem key={rate.value} value={rate.value.toString()}>
                                                         {rate.label}
                                                     </SelectItem>
@@ -321,6 +304,25 @@ export function EditInvoiceModal({ orderId, vehicleId, open, onOpenChange, initi
                                             <Trash2 className="h-4 w-4 text-red-500" />
                                         </Button>
                                     </div>
+                                </div>
+                                <div className="grid grid-cols-12 gap-2 items-start">
+                                    <div className="col-span-5">
+                                        <Label className="text-xs">Przypisz do *</Label>
+                                        <InvoiceTargetSelect
+                                            value={watchItems[index]?.target || ""}
+                                            onChange={(value) => setValue(`items.${index}.target`, value, { shouldDirty: true })}
+                                            itemName={watchItems[index]?.name}
+                                            vehicles={vehicles}
+                                            currentVehicleId={vehicleId}
+                                            currentVehiclePlate={vehiclePlate}
+                                        />
+                                    </div>
+                                    {watchItems[index]?.target === WAREHOUSE_TARGET && (
+                                        <p className="col-span-7 self-end pb-2 text-xs text-indigo-700">
+                                            Pozycja trafi na magazyn i nie obciąży żadnego auta.
+                                        </p>
+                                    )}
+                                </div>
                                 </div>
                             )
                         })}

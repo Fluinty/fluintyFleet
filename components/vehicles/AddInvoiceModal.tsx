@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import {
     Select,
     SelectContent,
@@ -27,6 +26,9 @@ import { useToast } from "@/components/ui/use-toast"
 import { Loader2, Plus, Trash2, FileText } from "lucide-react"
 import { addManualInvoice } from "@/app/actions/add-manual-invoice"
 import { format } from "date-fns"
+import { InvoiceTargetSelect, type InvoiceVehicleOption } from "./InvoiceTargetSelect"
+import { describeInvoiceSummary, isWarehouseTarget, VAT_RATE_OPTIONS, WAREHOUSE_TARGET } from "@/lib/manual-invoice"
+import { isWarehouseEligible, WAREHOUSE_PRODUCTS_LABEL } from "@/lib/warehouse"
 
 interface InvoiceFormData {
     orderDate: string
@@ -38,23 +40,17 @@ interface InvoiceFormData {
         quantity: number
         unitPriceNet: number
         vatRate: number
+        target: string   // id auta albo WAREHOUSE_TARGET
     }>
 }
 
 interface AddInvoiceModalProps {
     vehicleId: string
     vehiclePlate: string
+    vehicles: InvoiceVehicleOption[]
 }
 
-const VAT_RATES = [
-    { label: "23%", value: 23 },
-    { label: "8%", value: 8 },
-    { label: "5%", value: 5 },
-    { label: "0%", value: 0 },
-    { label: "zw.", value: 0 },
-]
-
-export function AddInvoiceModal({ vehicleId, vehiclePlate }: AddInvoiceModalProps) {
+export function AddInvoiceModal({ vehicleId, vehiclePlate, vehicles }: AddInvoiceModalProps) {
     const router = useRouter()
     const [open, setOpen] = useState(false)
     const [loading, setLoading] = useState(false)
@@ -80,6 +76,7 @@ export function AddInvoiceModal({ vehicleId, vehiclePlate }: AddInvoiceModalProp
                     quantity: 1,
                     unitPriceNet: 0,
                     vatRate: 23,
+                    target: vehicleId,
                 },
             ],
         },
@@ -126,6 +123,16 @@ export function AddInvoiceModal({ vehicleId, vehiclePlate }: AddInvoiceModalProp
     const invoiceTotals = calculateInvoiceTotals()
 
     const onSubmit = async (data: InvoiceFormData) => {
+        // Magazyn tylko dla nazw z listy; serwer sprawdza to drugi raz
+        const badWarehouse = data.items.find(i => isWarehouseTarget(i.target) && !isWarehouseEligible(i.name))
+        if (badWarehouse) {
+            toast({
+                title: "Pozycja nie może iść na magazyn",
+                description: `„${badWarehouse.name}”: na magazyn idą tylko ${WAREHOUSE_PRODUCTS_LABEL}. Wybierz auto albo popraw nazwę.`,
+                variant: "destructive",
+            })
+            return
+        }
         setLoading(true)
 
         try {
@@ -139,14 +146,14 @@ export function AddInvoiceModal({ vehicleId, vehiclePlate }: AddInvoiceModalProp
                 })
             } else {
                 toast({
-                    title: "Sukces",
-                    description: "Faktura została dodana.",
+                    title: "Faktura zapisana",
+                    description: result.summary ? describeInvoiceSummary(result.summary, vehiclePlate) : "Faktura została dodana.",
                 })
                 setOpen(false)
                 reset()
                 router.refresh()
             }
-        } catch (error) {
+        } catch {
             toast({
                 title: "Błąd",
                 description: "Wystąpił nieoczekiwany błąd.",
@@ -172,7 +179,8 @@ export function AddInvoiceModal({ vehicleId, vehiclePlate }: AddInvoiceModalProp
                         Nowa faktura - {vehiclePlate}
                     </DialogTitle>
                     <DialogDescription>
-                        Dodaj fakturę z wieloma pozycjami dla tego pojazdu
+                        Każdą pozycję przypisujesz osobno: do tego auta, do innego auta z listy albo na magazyn ({WAREHOUSE_PRODUCTS_LABEL}).
+                        Jedną fakturę wpisujesz raz, nawet gdy części idą na kilka aut.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -232,6 +240,7 @@ export function AddInvoiceModal({ vehicleId, vehiclePlate }: AddInvoiceModalProp
                                         quantity: 1,
                                         unitPriceNet: 0,
                                         vatRate: 23,
+                                        target: vehicleId,
                                     })
                                 }
                             >
@@ -243,10 +252,8 @@ export function AddInvoiceModal({ vehicleId, vehiclePlate }: AddInvoiceModalProp
                         {fields.map((field: { id: string }, index: number) => {
                             const totals = calculateItemTotals(index)
                             return (
-                                <div
-                                    key={field.id}
-                                    className="grid grid-cols-12 gap-2 items-start p-3 border rounded-lg bg-gray-50"
-                                >
+                                <div key={field.id} className="p-3 border rounded-lg bg-gray-50 space-y-2">
+                                <div className="grid grid-cols-12 gap-2 items-start">
                                     <div className="col-span-3">
                                         <Label className="text-xs">Nazwa *</Label>
                                         <Input
@@ -303,7 +310,7 @@ export function AddInvoiceModal({ vehicleId, vehiclePlate }: AddInvoiceModalProp
                                                 <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                {VAT_RATES.map((rate) => (
+                                                {VAT_RATE_OPTIONS.map((rate) => (
                                                     <SelectItem key={rate.value} value={rate.value.toString()}>
                                                         {rate.label}
                                                     </SelectItem>
@@ -331,6 +338,25 @@ export function AddInvoiceModal({ vehicleId, vehiclePlate }: AddInvoiceModalProp
                                             <Trash2 className="h-4 w-4 text-red-500" />
                                         </Button>
                                     </div>
+                                </div>
+                                <div className="grid grid-cols-12 gap-2 items-start">
+                                    <div className="col-span-5">
+                                        <Label className="text-xs">Przypisz do *</Label>
+                                        <InvoiceTargetSelect
+                                            value={watchItems[index]?.target || vehicleId}
+                                            onChange={(value) => setValue(`items.${index}.target`, value, { shouldDirty: true })}
+                                            itemName={watchItems[index]?.name}
+                                            vehicles={vehicles}
+                                            currentVehicleId={vehicleId}
+                                            currentVehiclePlate={vehiclePlate}
+                                        />
+                                    </div>
+                                    {watchItems[index]?.target === WAREHOUSE_TARGET && (
+                                        <p className="col-span-7 self-end pb-2 text-xs text-indigo-700">
+                                            Pozycja trafi na magazyn i nie obciąży żadnego auta.
+                                        </p>
+                                    )}
+                                </div>
                                 </div>
                             )
                         })}

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
     Table,
@@ -25,7 +25,9 @@ import { formatCurrency, formatDate } from "@/utils/format"
 import { useToast } from "@/components/ui/use-toast"
 import { Package, Calendar, ShoppingCart, Pencil, Trash2, Loader2 } from "lucide-react"
 import { deleteManualInvoice } from "@/app/actions/delete-manual-invoice"
+import { getManualInvoice } from "@/app/actions/get-manual-invoice"
 import { EditInvoiceModal } from "./EditInvoiceModal"
+import type { InvoiceVehicleOption, ManualInvoiceInput } from "@/lib/manual-invoice"
 
 interface OrderInfo {
     id: string
@@ -51,29 +53,19 @@ interface Item {
 interface VehicleItemsHistoryProps {
     items: Item[]
     vehicleId?: string
+    vehiclePlate?: string
+    vehicles?: InvoiceVehicleOption[]
     isAdmin?: boolean
 }
 
-export function VehicleItemsHistory({ items, vehicleId, isAdmin }: VehicleItemsHistoryProps) {
+export function VehicleItemsHistory({ items, vehicleId, vehiclePlate, vehicles = [], isAdmin }: VehicleItemsHistoryProps) {
     const router = useRouter()
     const { toast } = useToast()
     const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null)
     const [deleting, setDeleting] = useState(false)
-    const [editingOrder, setEditingOrder] = useState<{
-        orderId: string
-        data: {
-            orderDate: string
-            supplier: string
-            invoiceNumber: string
-            items: Array<{
-                name: string
-                sku: string
-                quantity: number
-                unitPriceNet: number
-                vatRate: number
-            }>
-        }
-    } | null>(null)
+    const [loadingEditId, setLoadingEditId] = useState<string | null>(null)
+    const editRequestRef = useRef<string | null>(null)   // ostatnio kliknięta faktura; starsze odpowiedzi ignorujemy
+    const [editingOrder, setEditingOrder] = useState<{ orderId: string; data: ManualInvoiceInput; vehicles: InvoiceVehicleOption[] } | null>(null)
 
     // Helper to get order info from the nested relation
     const getOrderInfo = (item: Item): OrderInfo | null => {
@@ -97,14 +89,6 @@ export function VehicleItemsHistory({ items, vehicleId, isAdmin }: VehicleItemsH
         return order.intercars_id || "-"
     }
 
-    // Group items by order for edit functionality
-    const getItemsForOrder = (orderId: string): Item[] => {
-        return items.filter(item => {
-            const order = getOrderInfo(item)
-            return order?.id === orderId
-        })
-    }
-
     const handleDelete = async () => {
         if (!deleteOrderId || !vehicleId) return
         setDeleting(true)
@@ -125,24 +109,30 @@ export function VehicleItemsHistory({ items, vehicleId, isAdmin }: VehicleItemsH
         }
     }
 
-    const handleEditClick = (order: OrderInfo) => {
-        const orderItems = getItemsForOrder(order.id)
-
-        setEditingOrder({
-            orderId: order.id,
-            data: {
-                orderDate: order.order_date ? order.order_date.split('T')[0] : "",
-                supplier: order.description || "",
-                invoiceNumber: order.fiscal_document_number || "",
-                items: orderItems.map(item => ({
-                    name: item.name || "",
-                    sku: item.sku || "",
-                    quantity: item.required_quantity || 1,
-                    unitPriceNet: Number(item.unit_price_net) || 0,
-                    vatRate: 23, // Default, since we don't store VAT rate separately
-                })),
-            },
-        })
+    // Do edycji bierzemy całą fakturę z bazy, nie tylko pozycje tego auta: od 22.10.2026 jedna faktura
+    // może mieć pozycje dla kilku aut i magazynu, a zapis edycji wymienia komplet pozycji.
+    // Wczytanie trwa chwilę; w tym czasie wszystkie „Edytuj” są wyłączone, a gdyby mimo to przyszła
+    // odpowiedź na wcześniejsze kliknięcie, nie otwieramy z nią formularza (zapis poszedłby pod zły orderId).
+    const handleEditClick = async (order: OrderInfo) => {
+        if (loadingEditId) return
+        editRequestRef.current = order.id
+        setLoadingEditId(order.id)
+        try {
+            const result = await getManualInvoice(order.id)
+            if (editRequestRef.current !== order.id) return
+            if (result.error || !result.invoice) {
+                toast({ title: "Błąd", description: result.error || "Nie udało się wczytać faktury.", variant: "destructive" })
+                return
+            }
+            // Auta z faktury (także nieaktywne) dołączamy do listy, żeby select pokazał ich rejestracje
+            const known = new Set(vehicles.map(v => v.id))
+            const extra = (result.vehicles || []).filter(v => !known.has(v.id))
+            setEditingOrder({ orderId: order.id, data: result.invoice, vehicles: [...vehicles, ...extra] })
+        } catch {
+            toast({ title: "Błąd", description: "Wystąpił nieoczekiwany błąd.", variant: "destructive" })
+        } finally {
+            if (editRequestRef.current === order.id) setLoadingEditId(null)
+        }
     }
 
     // Mobile Card View
@@ -200,8 +190,8 @@ export function VehicleItemsHistory({ items, vehicleId, isAdmin }: VehicleItemsH
                             </div>
                             {isAdmin && isManual && order && (
                                 <div className="flex gap-2 mt-3 pt-3 border-t">
-                                    <Button variant="outline" size="sm" onClick={() => handleEditClick(order)} className="text-xs">
-                                        <Pencil className="h-3 w-3 mr-1" /> Edytuj
+                                    <Button variant="outline" size="sm" onClick={() => handleEditClick(order)} disabled={!!loadingEditId} className="text-xs">
+                                        {loadingEditId === order.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Pencil className="h-3 w-3 mr-1" />} Edytuj
                                     </Button>
                                     <Button variant="outline" size="sm" onClick={() => setDeleteOrderId(order.id)} className="text-xs text-red-600 hover:text-red-700">
                                         <Trash2 className="h-3 w-3 mr-1" /> Usuń
@@ -266,8 +256,8 @@ export function VehicleItemsHistory({ items, vehicleId, isAdmin }: VehicleItemsH
                                         <TableCell className="text-right">
                                             {isManual && order && (
                                                 <div className="flex gap-1 justify-end">
-                                                    <Button variant="ghost" size="sm" onClick={() => handleEditClick(order)} className="h-7 w-7 p-0">
-                                                        <Pencil className="h-3.5 w-3.5 text-amber-600" />
+                                                    <Button variant="ghost" size="sm" onClick={() => handleEditClick(order)} disabled={!!loadingEditId} className="h-7 w-7 p-0">
+                                                        {loadingEditId === order.id ? <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-600" /> : <Pencil className="h-3.5 w-3.5 text-amber-600" />}
                                                     </Button>
                                                     <Button variant="ghost" size="sm" onClick={() => setDeleteOrderId(order.id)} className="h-7 w-7 p-0">
                                                         <Trash2 className="h-3.5 w-3.5 text-red-500" />
@@ -296,7 +286,7 @@ export function VehicleItemsHistory({ items, vehicleId, isAdmin }: VehicleItemsH
                     <AlertDialogHeader>
                         <AlertDialogTitle>Usunąć fakturę?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Ta operacja jest nieodwracalna. Faktura i wszystkie jej pozycje zostaną trwale usunięte.
+                            Ta operacja jest nieodwracalna. Faktura i wszystkie jej pozycje zostaną trwale usunięte, także te przypisane do innych aut i do magazynu.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -318,6 +308,8 @@ export function VehicleItemsHistory({ items, vehicleId, isAdmin }: VehicleItemsH
                 <EditInvoiceModal
                     orderId={editingOrder.orderId}
                     vehicleId={vehicleId}
+                    vehiclePlate={vehiclePlate || "to auto"}
+                    vehicles={editingOrder.vehicles}
                     open={!!editingOrder}
                     onOpenChange={(open) => !open && setEditingOrder(null)}
                     initialData={editingOrder.data}

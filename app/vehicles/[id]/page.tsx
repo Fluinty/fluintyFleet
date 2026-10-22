@@ -101,6 +101,21 @@ export default async function VehicleDetailsPage({ params }: PageProps) {
     // Fetch branches user has access to
     const availableBranches = await getUserBranches()
 
+    // Lista aut do formularza faktury (pozycja może iść na inne auto niż to); tylko admin widzi ten formularz.
+    // Auto z tej karty jest na liście zawsze, nawet gdy jest nieaktywne (karta jest dostępna dla każdego auta).
+    let invoiceVehicles: { id: string; plate_number: string; is_active?: boolean }[] = []
+    if (isAdmin) {
+        const { data: activeVehicles } = await supabase
+            .from('vehicles')
+            .select('id, plate_number, is_active')
+            .eq('is_active', true)
+            .order('plate_number', { ascending: true })
+        invoiceVehicles = activeVehicles || []
+        if (!invoiceVehicles.some(v => v.id === id)) {
+            invoiceVehicles = [{ id, plate_number: vehicle.plate_number, is_active: !!vehicle.is_active }, ...invoiceVehicles]
+        }
+    }
+
     return (
         <div className="flex-1 space-y-4">
             <div className="flex items-center justify-between">
@@ -119,7 +134,7 @@ export default async function VehicleDetailsPage({ params }: PageProps) {
                     )}
                 </div>
                 {isAdmin && (
-                    <AddInvoiceModal vehicleId={id} vehiclePlate={vehicle.plate_number} />
+                    <AddInvoiceModal vehicleId={id} vehiclePlate={vehicle.plate_number} vehicles={invoiceVehicles} />
                 )}
             </div>
 
@@ -143,7 +158,7 @@ export default async function VehicleDetailsPage({ params }: PageProps) {
             {isAdmin && (
                 <div className="space-y-4">
                     <h3 className="text-xl font-bold tracking-tight">Przypisane Części</h3>
-                    <VehicleItemsHistory items={items || []} vehicleId={id} isAdmin={isAdmin} />
+                    <VehicleItemsHistory items={items || []} vehicleId={id} vehiclePlate={vehicle.plate_number} vehicles={invoiceVehicles} isAdmin={isAdmin} />
                 </div>
             )}
         </div>

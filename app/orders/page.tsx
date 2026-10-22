@@ -64,7 +64,13 @@ export default async function OrdersPage({
         .select('*, branches(name), order_items(*, vehicles(id, plate_number))')
 
     if (search) {
-        query = query.or(`intercars_id.ilike.%${search}%,description.ilike.%${search}%`)
+        // Numer z dokumentu InterCars bywa bez kodu oddziału („114478/4/2026”), a w bazie siedzi
+        // „114478/4/LGA/2026”; taki zapis zamieniamy na wzorzec z dowolnym oddziałem w środku.
+        const icDocNumber = /^(\d+)(?:\/(\d+))?\/(\d{4})$/.exec(search)
+        const idPattern = icDocNumber
+            ? `${icDocNumber[1]}/${icDocNumber[2] ? `${icDocNumber[2]}/` : ''}%/${icDocNumber[3]}`
+            : search
+        query = query.or(`intercars_id.ilike.%${idPattern}%,description.ilike.%${search}%`)
     }
 
     if (branch) {
@@ -101,7 +107,7 @@ export default async function OrdersPage({
     const { data: branches } = await supabase.from('branches').select('id, name').order('name')
 
     // Fetch vehicles for assignment
-    let vehiclesQuery = supabase
+    const vehiclesQuery = supabase
         .from('vehicles')
         .select('id, plate_number, branch_id')
         .eq('is_active', true)
