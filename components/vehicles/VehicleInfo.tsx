@@ -1,17 +1,21 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatDate } from "@/utils/format"
-import { AirportStatusSelect } from "./AirportStatusSelect"
 import { BranchSelect } from "./BranchSelect"
 import { DocumentPreviewButton } from "./DocumentPreviewButton"
 import { FinancingSection } from "./FinancingSection"
+import { VehicleFlagSelect } from "./VehicleFlagSelect"
 
 interface VehicleInfoProps {
     vehicle: any // Typed lazily for speed, ideally proper Supabase type
     branchName?: string
     availableBranches: { id: string; name: string }[]
+    // false: auto lotniskowe spoza oddziałów kierownika (wejście z zakładki „Lotnisko”), karta tylko do odczytu
+    canEdit: boolean
+    // „Auto podwykonawcy” zmienia tylko admin: takie auto wypada z przypomnień o terminach
+    isAdmin: boolean
 }
 
-export function VehicleInfo({ vehicle, branchName, availableBranches }: VehicleInfoProps) {
+export function VehicleInfo({ vehicle, branchName, availableBranches, canEdit, isAdmin }: VehicleInfoProps) {
     return (
         <Card className="h-full">
             <CardHeader>
@@ -21,11 +25,15 @@ export function VehicleInfo({ vehicle, branchName, availableBranches }: VehicleI
                 <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
                         <p className="text-muted-foreground">Oddział</p>
-                        <BranchSelect
-                            vehicleId={vehicle.id}
-                            currentBranchId={vehicle.branch_id}
-                            availableBranches={availableBranches}
-                        />
+                        {canEdit ? (
+                            <BranchSelect
+                                vehicleId={vehicle.id}
+                                currentBranchId={vehicle.branch_id}
+                                availableBranches={availableBranches}
+                            />
+                        ) : (
+                            <p className="font-medium">{branchName || "-"}</p>
+                        )}
                     </div>
                     <div>
                         <p className="text-muted-foreground">Status</p>
@@ -75,13 +83,31 @@ export function VehicleInfo({ vehicle, branchName, availableBranches }: VehicleI
                         company={vehicle.leasing_company}
                         startDate={vehicle.financing_start_date}
                         endDate={vehicle.leasing_end_date}
+                        readOnly={!canEdit}
                     />
                     <div>
                         <p className="text-muted-foreground">Lotnisko</p>
-                        <AirportStatusSelect
-                            vehicleId={vehicle.id}
-                            initialValue={vehicle.is_airport}
-                        />
+                        {canEdit ? (
+                            <VehicleFlagSelect
+                                vehicleId={vehicle.id}
+                                flag="airport"
+                                initialValue={vehicle.is_airport}
+                            />
+                        ) : (
+                            <p className="font-medium">{vehicle.is_airport ? "Tak" : "Nie"}</p>
+                        )}
+                    </div>
+                    <div>
+                        <p className="text-muted-foreground">Auto podwykonawcy</p>
+                        {isAdmin ? (
+                            <VehicleFlagSelect
+                                vehicleId={vehicle.id}
+                                flag="subcontractor"
+                                initialValue={vehicle.is_subcontractor}
+                            />
+                        ) : (
+                            <p className="font-medium">{vehicle.is_subcontractor ? "Tak" : "Nie"}</p>
+                        )}
                     </div>
                 </div>
             </CardContent>

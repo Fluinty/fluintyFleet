@@ -151,3 +151,59 @@ export async function getUserBranches() {
         return []
     }
 }
+
+/**
+ * Oznacza auto jako auto podwykonawcy albo zdejmuje oznaczenie.
+ * Tylko admin: auto podwykonawcy wypada z przypomnień o przeglądach, polisach i UDT (n8n).
+ * @param vehicleId - UUID of the vehicle
+ * @param isSubcontractor - true = auto podwykonawcy
+ */
+export async function updateVehicleSubcontractorStatus(
+    vehicleId: string,
+    isSubcontractor: boolean
+) {
+    try {
+        const supabase = await createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+
+        if (!user) {
+            return { success: false, error: 'Nie zalogowano' }
+        }
+
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .single()
+
+        if (profile?.role !== 'admin') {
+            return { success: false, error: 'Auto podwykonawcy może oznaczyć tylko administrator' }
+        }
+
+        const { data, error } = await supabase
+            .from('vehicles')
+            .update({
+                is_subcontractor: isSubcontractor,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', vehicleId)
+            .select('id')
+
+        if (error) {
+            console.error('[SUBCONTRACTOR UPDATE ERROR]', error)
+            return { success: false, error: error.message }
+        }
+
+        if (!data || data.length === 0) {
+            return { success: false, error: 'Brak uprawnień do edycji tego pojazdu' }
+        }
+
+        revalidatePath(`/vehicles/${vehicleId}`)
+        revalidatePath('/vehicles')
+
+        return { success: true }
+    } catch (error) {
+        console.error('[SUBCONTRACTOR UPDATE] Unexpected error:', error)
+        return { success: false, error: 'Wystąpił nieoczekiwany błąd' }
+    }
+}

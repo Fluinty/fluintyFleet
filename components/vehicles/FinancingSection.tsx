@@ -21,6 +21,8 @@ interface FinancingSectionProps {
     company: string | null
     startDate: string | null
     endDate: string | null
+    // true: karta tylko do odczytu (auto lotniskowe spoza oddziałów kierownika)
+    readOnly?: boolean
 }
 
 const FINANCING_LABELS: Record<string, string> = {
@@ -35,6 +37,7 @@ export function FinancingSection({
     company: initialCompany,
     startDate: initialStartDate,
     endDate: initialEndDate,
+    readOnly = false,
 }: FinancingSectionProps) {
     const router = useRouter()
     const { toast } = useToast()
@@ -81,15 +84,17 @@ export function FinancingSection({
             <div className="col-span-2 border-t pt-4 mt-2">
                 <div className="flex items-center justify-between mb-3">
                     <p className="text-sm font-semibold text-slate-700">Finansowanie</p>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setEditing(true)}
-                        className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                    >
-                        <Pencil className="h-3 w-3 mr-1" />
-                        Edytuj
-                    </Button>
+                    {!readOnly && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditing(true)}
+                            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                            <Pencil className="h-3 w-3 mr-1" />
+                            Edytuj
+                        </Button>
+                    )}
                 </div>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>

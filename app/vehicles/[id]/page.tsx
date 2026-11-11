@@ -21,23 +21,38 @@ export default async function VehicleDetailsPage({ params }: PageProps) {
     // Check user role
     const { data: { user } } = await supabase.auth.getUser()
     let isAdmin = true
+    let canViewAirport = false
     if (user) {
         const { data: profile } = await supabase
             .from('profiles')
-            .select('role')
+            .select('role, can_view_airport')
             .eq('id', user.id)
             .single()
         isAdmin = profile?.role === 'admin'
+        canViewAirport = isAdmin || profile?.can_view_airport === true
     }
 
     // 1. Fetch Vehicle Details
-    const { data: vehicle, error } = await supabase
+    let { data: vehicle } = await supabase
         .from('vehicles')
         .select('*, branches(name)')
         .eq('id', id)
         .single()
 
-    if (error || !vehicle) {
+    // Auto lotniskowe spoza oddziałów kierownika z podglądem lotniska (wejście z zakładki „Lotnisko”):
+    // dane z funkcji airport_vehicles(), karta tylko do odczytu.
+    let canEdit = true
+    if (!vehicle && canViewAirport) {
+        const { data: airportVehicle } = await supabase
+            .rpc('airport_vehicles')
+            .select('*, branches(name)')
+            .eq('id', id)
+            .single()
+        vehicle = airportVehicle
+        canEdit = false
+    }
+
+    if (!vehicle) {
         notFound()
     }
 
@@ -144,6 +159,8 @@ export default async function VehicleDetailsPage({ params }: PageProps) {
                         vehicle={vehicle}
                         branchName={branchName}
                         availableBranches={availableBranches}
+                        canEdit={canEdit}
+                        isAdmin={isAdmin}
                     />
                 </div>
                 <div className="col-span-4">

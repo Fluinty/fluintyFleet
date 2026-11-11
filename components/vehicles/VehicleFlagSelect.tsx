@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { updateVehicleAirportStatus } from '@/app/actions/vehicles'
+import { updateVehicleAirportStatus, updateVehicleSubcontractorStatus } from '@/app/actions/vehicles'
 import {
     Select,
     SelectContent,
@@ -11,15 +11,32 @@ import {
 } from '@/components/ui/select'
 import { useToast } from '@/components/ui/use-toast'
 
-interface AirportStatusSelectProps {
+type FlagConfig = {
+    save: (vehicleId: string, value: boolean) => Promise<{ success: boolean; error?: string }>
+    saved: (value: boolean) => string
+}
+
+// Pola Tak/Nie na karcie auta: każde ma swoją akcję serwera i opis po zapisie.
+const FLAGS: Record<'airport' | 'subcontractor', FlagConfig> = {
+    airport: {
+        save: updateVehicleAirportStatus,
+        saved: () => 'Status lotniska został zaktualizowany',
+    },
+    subcontractor: {
+        save: updateVehicleSubcontractorStatus,
+        saved: (value) => value
+            ? 'Auto podwykonawcy: bez przypomnień o terminach'
+            : 'Auto wraca do przypomnień o terminach',
+    },
+}
+
+interface VehicleFlagSelectProps {
     vehicleId: string
+    flag: keyof typeof FLAGS
     initialValue: boolean | null
 }
 
-export function AirportStatusSelect({
-    vehicleId,
-    initialValue
-}: AirportStatusSelectProps) {
+export function VehicleFlagSelect({ vehicleId, flag, initialValue }: VehicleFlagSelectProps) {
     const [value, setValue] = useState(initialValue?.toString() ?? 'false')
     const [loading, setLoading] = useState(false)
     const { toast } = useToast()
@@ -29,15 +46,12 @@ export function AirportStatusSelect({
         setLoading(true)
         setValue(newValue)
 
-        const result = await updateVehicleAirportStatus(
-            vehicleId,
-            newValue === 'true'
-        )
+        const result = await FLAGS[flag].save(vehicleId, newValue === 'true')
 
         if (result.success) {
             toast({
                 title: 'Zapisano',
-                description: 'Status lotniska został zaktualizowany',
+                description: FLAGS[flag].saved(newValue === 'true'),
             })
         } else {
             toast({
@@ -45,7 +59,7 @@ export function AirportStatusSelect({
                 description: result.error || 'Nie udało się zapisać zmian',
                 variant: 'destructive',
             })
-            // Revert to previous value on error
+            // Po błędzie wracamy do poprzedniej wartości
             setValue(previousValue)
         }
 

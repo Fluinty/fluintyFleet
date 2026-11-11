@@ -30,10 +30,17 @@ interface Vehicle {
     financing_type?: string | null
     leasing_end_date?: string | null
     vehicle_category?: string | null
+    is_subcontractor?: boolean | null
     branches?: { name: string } | { name: string }[] | null
 }
 
-export function VehiclesTable({ vehicles }: { vehicles: Vehicle[] }) {
+export function VehiclesTable({
+    vehicles,
+    emptyMessage = "Brak pojazdów spełniających kryteria.",
+}: {
+    vehicles: Vehicle[]
+    emptyMessage?: string
+}) {
     const router = useRouter()
     const searchParams = useSearchParams()
 
@@ -74,7 +81,7 @@ export function VehiclesTable({ vehicles }: { vehicles: Vehicle[] }) {
         <div className="space-y-3 md:hidden">
             {vehicles.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
-                    Brak pojazdów spełniających kryteria.
+                    {emptyMessage}
                 </div>
             ) : (
                 vehicles.map((vehicle) => {
@@ -110,6 +117,11 @@ export function VehiclesTable({ vehicles }: { vehicles: Vehicle[] }) {
                                         {vehicle.vehicle_category === 'car' && (
                                             <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-gray-100 text-gray-600 w-fit">
                                                 Osobówka
+                                            </span>
+                                        )}
+                                        {vehicle.is_subcontractor && (
+                                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-teal-100 text-teal-700 w-fit">
+                                                Podwykonawca
                                             </span>
                                         )}
                                     </div>
@@ -201,8 +213,8 @@ export function VehiclesTable({ vehicles }: { vehicles: Vehicle[] }) {
                 <TableBody>
                     {vehicles.length === 0 ? (
                         <TableRow>
-                            <TableCell colSpan={8} className="text-center h-24 text-gray-500">
-                                Brak pojazdów spełniających kryteria.
+                            <TableCell colSpan={9} className="text-center h-24 text-gray-500">
+                                {emptyMessage}
                             </TableCell>
                         </TableRow>
                     ) : (
@@ -225,6 +237,11 @@ export function VehiclesTable({ vehicles }: { vehicles: Vehicle[] }) {
                                             {vehicle.vehicle_category === 'car' && (
                                                 <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-gray-100 text-gray-600">
                                                     Osobówka
+                                                </span>
+                                            )}
+                                            {vehicle.is_subcontractor && (
+                                                <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-teal-100 text-teal-700">
+                                                    Podwykonawca
                                                 </span>
                                             )}
                                         </div>
