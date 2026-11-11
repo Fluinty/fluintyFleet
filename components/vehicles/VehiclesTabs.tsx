@@ -1,7 +1,6 @@
 import Link from "next/link"
 import { cn } from "@/lib/utils"
-
-export type VehiclesTab = "wszystkie" | "lotnisko" | "podwykonawcy"
+import type { VehiclesTab } from "@/lib/vehicles-list"
 
 const LABELS: Record<VehiclesTab, string> = {
     wszystkie: "Wszystkie",
