@@ -7,7 +7,8 @@
 --    Zasady RLS tabeli vehicles się nie zmieniają. Zakładka czyta auta przez funkcję airport_vehicles(),
 --    więc kierownik z flagą widzi auta lotniskowe innych oddziałów tylko tam (i na ich karcie, bez edycji),
 --    a pulpit, listy wyboru auta i reszta panelu wyglądają dla niego jak dotąd.
--- 3. Flaga dla Bartosza Górskiego i Jakuba Pawlaka (decyzja Artura z 10.11.2026).
+-- 3. Flaga dla dwóch kont kierowników wskazanych przez klienta (10.11.2026), ustawiona przy wdrożeniu.
+--    Repo jest publiczne, więc adresów e-mail ani nazwisk tu nie ma.
 
 ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS is_subcontractor boolean NOT NULL DEFAULT false;
 ALTER TABLE public.vehicles_archive ADD COLUMN IF NOT EXISTS is_subcontractor boolean NOT NULL DEFAULT false;
@@ -39,9 +40,5 @@ REVOKE ALL ON FUNCTION public.airport_vehicles() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.airport_vehicles() FROM anon;
 GRANT EXECUTE ON FUNCTION public.airport_vehicles() TO authenticated;
 
-UPDATE public.profiles
-SET can_view_airport = true
-WHERE id IN (
-    SELECT id FROM auth.users
-    WHERE lower(email) IN ('bgorski@ups-transport.pl', 'jpawlak@ups-transport.pl')
-);
+-- Podgląd lotniska dla kolejnej osoby (id z tabeli profiles):
+-- UPDATE public.profiles SET can_view_airport = true WHERE id = '<id profilu>';
