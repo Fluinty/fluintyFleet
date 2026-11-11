@@ -1,4 +1,4 @@
-// Wykaz pojazdów do Excela, w tym samym układzie co wykazy wysyłane Arturowi (Lp., Marka, Model, Nr rej.,
+// Wykaz pojazdów do Excela, w tym samym układzie co wykazy wysyłane klientowi (Lp., Marka, Model, Nr rej.,
 // Rok produkcji, Pojemność, Ładowność). Lp. to formuła =ROW()-1 z zapisanym wynikiem: po usunięciu wiersza
 // numeracja sama się poprawia, a podgląd w poczcie i tak pokazuje numery.
 import ExcelJS from 'exceljs'

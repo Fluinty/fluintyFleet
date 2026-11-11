@@ -24,7 +24,7 @@ interface InvoiceTargetSelectProps {
 }
 
 // Dokąd trafia jedna pozycja faktury: to auto, inne auto z listy albo magazyn. „Magazyn” da się wybrać
-// tylko dla nazw z listy Artura (lib/warehouse.ts); gdy nazwa się zmieni i przestanie pasować, pokazujemy
+// tylko dla nazw z listy klienta (lib/warehouse.ts); gdy nazwa się zmieni i przestanie pasować, pokazujemy
 // ostrzeżenie, a serwer i tak odrzuci zapis. Auto nieaktywne, na którym pozycja już leży, zostaje na
 // liście z dopiskiem, żeby dało się je rozpoznać i do niego wrócić.
 export function InvoiceTargetSelect({ value, onChange, itemName, vehicles, currentVehicleId, currentVehiclePlate }: InvoiceTargetSelectProps) {

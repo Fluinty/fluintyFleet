@@ -1,5 +1,5 @@
 // Produkty, które wolno przypisać na magazyn zamiast do konkretnego pojazdu.
-// Lista od Artura Przenniaka: olej silnikowy i AdBlue (mail 21.10.2026) oraz opony (mail 22.10.2026:
+// Lista od klienta: olej silnikowy i AdBlue (mail 21.10.2026) oraz opony (mail 22.10.2026:
 // opony przychodzą z magazynu opon InterCars, kod HWR, i są rozdysponowywane na oddziały z magazynu).
 // Dopasowanie po nazwie pozycji z faktury, bez względu na wielkość liter. Nazwy z InterCars
 // bywają bez słowa "olej" (np. "CASTROL EDGE 5W-30 LL 60L"), dlatego łapiemy też klasę lepkości
