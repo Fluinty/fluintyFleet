@@ -15,6 +15,12 @@ interface VehicleInfoProps {
     isAdmin: boolean
 }
 
+// Komórka dokumentu: podgląd przez panel (widzi go każdy, kto widzi auto) albo „BRAK”
+function DocumentCell({ vehicleId, url, kind, title }: { vehicleId: string; url: string | null; kind: "dowod" | "polisa"; title: string }) {
+    if (!url) return <p className="font-medium text-muted-foreground">BRAK</p>
+    return <DocumentPreviewButton src={`/api/vehicles/${vehicleId}/document?kind=${kind}`} title={title} />
+}
+
 export function VehicleInfo({ vehicle, branchName, availableBranches, canEdit, isAdmin }: VehicleInfoProps) {
     return (
         <Card className="h-full">
@@ -53,14 +59,12 @@ export function VehicleInfo({ vehicle, branchName, availableBranches, canEdit, i
                     </div>
                     <div>
                         <p className="text-muted-foreground">Polisa</p>
-                        {vehicle.insurance_document_url ? (
-                            <DocumentPreviewButton
-                                url={vehicle.insurance_document_url}
-                                title={`Polisa ubezpieczeniowa — ${vehicle.plate_number}`}
-                            />
-                        ) : (
-                            <p className="font-medium text-muted-foreground">BRAK</p>
-                        )}
+                        <DocumentCell
+                            vehicleId={vehicle.id}
+                            url={vehicle.insurance_document_url}
+                            kind="polisa"
+                            title={`Polisa ubezpieczeniowa — ${vehicle.plate_number}`}
+                        />
                     </div>
                     <div>
                         <p className="text-muted-foreground">Przegląd</p>
@@ -68,14 +72,12 @@ export function VehicleInfo({ vehicle, branchName, availableBranches, canEdit, i
                     </div>
                     <div>
                         <p className="text-muted-foreground">Dokument przeglądu</p>
-                        {vehicle.inspection_document_url ? (
-                            <DocumentPreviewButton
-                                url={vehicle.inspection_document_url}
-                                title={`Dokument przeglądu — ${vehicle.plate_number}`}
-                            />
-                        ) : (
-                            <p className="font-medium text-muted-foreground">BRAK</p>
-                        )}
+                        <DocumentCell
+                            vehicleId={vehicle.id}
+                            url={vehicle.inspection_document_url}
+                            kind="dowod"
+                            title={`Dokument przeglądu — ${vehicle.plate_number}`}
+                        />
                     </div>
                     <FinancingSection
                         vehicleId={vehicle.id}

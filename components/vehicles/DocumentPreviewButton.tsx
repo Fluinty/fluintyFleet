@@ -10,53 +10,14 @@ import {
 import { Eye, ExternalLink } from "lucide-react"
 
 interface DocumentPreviewButtonProps {
-    url: string
+    // Adres podglądu w panelu (/api/vehicles/{id}/document?kind=...): panel sprawdza uprawnienia
+    // i pobiera plik z Dysku przez n8n, więc Dysk nie musi być udostępniony linkiem
+    src: string
     title: string
 }
 
-/**
- * Converts various Google Drive URL formats into an embeddable preview URL.
- * Supports:
- *   - https://drive.google.com/file/d/{ID}/view...
- *   - https://drive.google.com/open?id={ID}
- *   - https://docs.google.com/document/d/{ID}/...
- *   - Direct links with /file/d/{ID}
- */
-function toGDrivePreviewUrl(url: string): string | null {
-    // Pattern 1: /file/d/{ID}/ or /document/d/{ID}/
-    const fileMatch = url.match(/\/(?:file|document)\/d\/([a-zA-Z0-9_-]+)/)
-    if (fileMatch) {
-        return `https://drive.google.com/file/d/${fileMatch[1]}/preview`
-    }
-
-    // Pattern 2: ?id={ID}
-    const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/)
-    if (idMatch) {
-        return `https://drive.google.com/file/d/${idMatch[1]}/preview`
-    }
-
-    return null
-}
-
-export function DocumentPreviewButton({ url, title }: DocumentPreviewButtonProps) {
+export function DocumentPreviewButton({ src, title }: DocumentPreviewButtonProps) {
     const [open, setOpen] = useState(false)
-
-    const previewUrl = toGDrivePreviewUrl(url)
-
-    // If we can't parse the GDrive URL, fallback to external link
-    if (!previewUrl) {
-        return (
-            <a
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1 font-medium"
-            >
-                Zobacz dokument
-                <ExternalLink className="h-3 w-3" />
-            </a>
-        )
-    }
 
     return (
         <>
@@ -77,20 +38,21 @@ export function DocumentPreviewButton({ url, title }: DocumentPreviewButtonProps
                         </DialogTitle>
                     </DialogHeader>
                     <div className="flex-1 px-6 pb-6">
-                        <iframe
-                            src={previewUrl}
-                            className="w-full h-full rounded-lg border"
-                            allow="autoplay"
-                            title={title}
-                        />
+                        {open && (
+                            <iframe
+                                src={src}
+                                className="w-full h-full rounded-lg border"
+                                title={title}
+                            />
+                        )}
                     </div>
                     <div className="absolute top-4 right-12">
                         <a
-                            href={url}
+                            href={src}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
-                            title="Otwórz w Google Drive"
+                            title="Otwórz w nowej karcie"
                         >
                             <ExternalLink className="h-3 w-3" />
                         </a>
